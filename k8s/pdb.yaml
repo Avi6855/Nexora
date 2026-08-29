@@ -1,0 +1,83 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: identity-service-pdb
+  namespace: nexora
+  labels:
+    app.kubernetes.io/name: identity-service
+    app.kubernetes.io/part-of: nexora
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: identity-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: payment-service-pdb
+  namespace: nexora
+  labels:
+    app.kubernetes.io/name: payment-service
+    app.kubernetes.io/part-of: nexora
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: payment-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ledger-service-pdb
+  namespace: nexora
+  labels:
+    app.kubernetes.io/name: ledger-service
+    app.kubernetes.io/part-of: nexora
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ledger-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: transfer-service-pdb
+  namespace: nexora
+  labels:
+    app.kubernetes.io/name: transfer-service
+    app.kubernetes.io/part-of: nexora
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: transfer-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: account-service-pdb
+  namespace: nexora
+  labels:
+    app.kubernetes.io/name: account-service
+    app.kubernetes.io/part-of: nexora
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: account-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: card-service-pdb
+  namespace: nexora
+  labels:
+    app.kubernetes.io/name: card-service
+    app.kubernetes.io/part-of: nexora
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: card-service

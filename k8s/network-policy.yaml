@@ -1,0 +1,129 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-ingress
+  namespace: nexora
+  labels:
+    app.kubernetes.io/part-of: nexora
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-envoy-to-services
+  namespace: nexora
+  labels:
+    app.kubernetes.io/part-of: nexora
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: nexora
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: envoy
+      ports:
+        - protocol: TCP
+          port: 8081
+        - protocol: TCP
+          port: 8082
+        - protocol: TCP
+          port: 8083
+        - protocol: TCP
+          port: 8084
+        - protocol: TCP
+          port: 8085
+        - protocol: TCP
+          port: 8086
+        - protocol: TCP
+          port: 8087
+        - protocol: TCP
+          port: 8088
+        - protocol: TCP
+          port: 8089
+        - protocol: TCP
+          port: 8090
+        - protocol: TCP
+          port: 8091
+        - protocol: TCP
+          port: 8092
+        - protocol: TCP
+          port: 8093
+        - protocol: TCP
+          port: 8094
+        - protocol: TCP
+          port: 8095
+        - protocol: TCP
+          port: 8096
+        - protocol: TCP
+          port: 8097
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-services-to-cassandra
+  namespace: nexora
+  labels:
+    app.kubernetes.io/part-of: nexora
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cassandra
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: nexora
+      ports:
+        - protocol: TCP
+          port: 9042
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-services-to-kafka
+  namespace: nexora
+  labels:
+    app.kubernetes.io/part-of: nexora
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: nexora
+      ports:
+        - protocol: TCP
+          port: 9092
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-external-to-envoy
+  namespace: nexora
+  labels:
+    app.kubernetes.io/part-of: nexora
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: envoy
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 9901

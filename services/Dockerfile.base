@@ -1,0 +1,16 @@
+FROM golang:1.22-alpine AS builder
+RUN apk add --no-cache git ca-certificates tzdata
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ARG SERVICE_PATH=./cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/server ${SERVICE_PATH}
+
+FROM alpine:3.19
+RUN apk --no-cache add ca-certificates tzdata wget
+COPY --from=builder /app/server /server
+ARG PORT=8080
+EXPOSE ${PORT}
+HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=20s CMD wget --spider -q http://localhost:${PORT}/health || exit 1
+CMD ["/server"]

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="nexora_primary">#FF00BFA5</color>
+    <color name="nexora_primary_dark">#FF00897B</color>
+    <color name="nexora_on_primary">#FFFFFFFF</color>
+    <color name="nexora_background">#FFF8FFFE</color>
+    <color name="nexora_on_background">#FF1A1C1E</color>
+    <color name="nexora_surface">#FFFFFFFF</color>
+    <color name="nexora_on_surface">#FF1A1C1E</color>
+    <color name="nexora_error">#FFE53935</color>
+    <color name="nexora_on_error">#FFFFFFFF</color>
+    <color name="nexora_status_bar">#FFF8FFFE</color>
+    <color name="ic_launcher_background">#FF0D9488</color>
+    <color name="ic_launcher_foreground">#FFFFFFFF</color>
+</resources>

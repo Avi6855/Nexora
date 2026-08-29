@@ -1,0 +1,647 @@
+static_resources:
+  listeners:
+    - name: main_listener
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8000
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                codec_type: AUTO
+                stat_prefix: ingress_http
+                use_remote_address: true
+                generate_request_id: true
+                common_http_protocol_options:
+                  idle_timeout: 300s
+                request_timeout: 30s
+                stream_idle_timeout: 300s
+                http_filters:
+                  - name: envoy.filters.http.cors
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+                  - name: envoy.filters.http.jwt_authn
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
+                      providers:
+                        nexora_jwt:
+                          issuer: nexora
+                          audiences:
+                            - nexora-api
+                          remote_jwks:
+                            http_uri:
+                              uri: http://identity-service:8081/.well-known/jwks.json
+                              cluster: identity_service
+                              timeout: 5s
+                      rules:
+                        - match:
+                            prefix: /v1/auth/verify
+                          requires:
+                            provider_and_audiences:
+                              provider_name: nexora_jwt
+                              audiences:
+                                - nexora-api
+                        - match:
+                            prefix: /v1/auth/token
+                          requires: {}
+                        - match:
+                            prefix: /v1/auth/
+                          requires: {}
+                        - match:
+                            prefix: /v1/auth/refresh
+                          requires: {}
+                        - match:
+                            prefix: /v1/health
+                          requires: {}
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: backend
+                      domains: ["*"]
+                      routes:
+                        # ── Auth ──
+                        - match:
+                            prefix: /v1/auth/
+                          route:
+                            cluster: identity_service
+                            timeout: 30s
+                            retry_policy:
+                              retry_on: "503"
+                              num_retries: 2
+                              per_try_timeout: 5s
+                          request_headers_to_add:
+                            - header:
+                                key: x-request-id
+                                value: "%REQ(x-request-id)%"
+
+                        # ── Users ──
+                        - match:
+                            prefix: /v1/users/
+                          route:
+                            cluster: user_service
+                            timeout: 30s
+
+                        # ── Accounts ──
+                        - match:
+                            prefix: /v1/accounts/
+                          route:
+                            cluster: account_service
+                            timeout: 30s
+
+                        # ── Ledger ──
+                        - match:
+                            prefix: /v1/ledger/
+                          route:
+                            cluster: ledger_service
+                            timeout: 30s
+
+                        # ── Payments ──
+                        - match:
+                            prefix: /v1/payments/
+                          route:
+                            cluster: payment_service
+                            timeout: 120s
+                            retry_policy:
+                              retry_on: "503"
+                              num_retries: 2
+                              per_try_timeout: 30s
+
+                        # ── Transfers ──
+                        - match:
+                            prefix: /v1/transfers/
+                          route:
+                            cluster: transfer_service
+                            timeout: 120s
+                            retry_policy:
+                              retry_on: "503"
+                              num_retries: 2
+                              per_try_timeout: 30s
+
+                        # ── Cards ──
+                        - match:
+                            prefix: /v1/cards/
+                          route:
+                            cluster: card_service
+                            timeout: 30s
+
+                        # ── Pots ──
+                        - match:
+                            prefix: /v1/pots/
+                          route:
+                            cluster: pot_service
+                            timeout: 30s
+
+                        # ── Notifications ──
+                        - match:
+                            prefix: /v1/notifications/
+                          route:
+                            cluster: notification_service
+                            timeout: 30s
+
+                        # ── Security / Control Plane ──
+                        - match:
+                            prefix: /v1/security/
+                          route:
+                            cluster: control_plane_service
+                            timeout: 30s
+
+                        # ── Engineering / Replay ──
+                        - match:
+                            prefix: /v1/engineering/
+                          route:
+                            cluster: replay_service
+                            timeout: 30s
+
+                        # ── Simulations ──
+                        - match:
+                            prefix: /v1/simulations/
+                          route:
+                            cluster: simulation_service
+                            timeout: 60s
+
+                        # ── Policies ──
+                        - match:
+                            prefix: /v1/policies/
+                          route:
+                            cluster: policy_service
+                            timeout: 30s
+
+                        # ── Reconciliation ──
+                        - match:
+                            prefix: /v1/reconciliation/
+                          route:
+                            cluster: reconciliation_service
+                            timeout: 60s
+
+                        # ── Incidents ──
+                        - match:
+                            prefix: /v1/incidents/
+                          route:
+                            cluster: incident_service
+                            timeout: 30s
+
+                        # ── Chaos ──
+                        - match:
+                            prefix: /v1/chaos/
+                          route:
+                            cluster: simulation_service
+                            timeout: 60s
+
+                        # ── Health ──
+                        - match:
+                            prefix: /v1/health
+                          route:
+                            cluster: control_plane_service
+                            timeout: 5s
+
+                        # ── Default 404 ──
+                        - match:
+                            prefix: /
+                          direct_response:
+                            status: 404
+                            body:
+                              inline_string: '{"error":"not_found","message":"The requested endpoint does not exist."}'
+
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        json_format:
+                          timestamp: "%START_TIME%"
+                          request_id: "%REQ(x-request-id)%"
+                          method: "%REQ(:METHOD)%"
+                          path: "%REQ(:PATH)%"
+                          protocol: "%PROTOCOL%"
+                          response_code: "%RESPONSE_CODE%"
+                          response_flags: "%RESPONSE_FLAGS%"
+                          duration_ms: "%DURATION%"
+                          upstream_cluster: "%UPSTREAM_CLUSTER%"
+                          upstream_host: "%UPSTREAM_HOST%"
+                          upstream_response_code: "%RESP(x-envoy-upstream-service-time)%"
+                          request_size: "%BYTES_RECEIVED%"
+                          response_size: "%BYTES_SENT%"
+                          user_agent: "%REQ(USER-AGENT)%"
+                          source_ip: "%DOWNSTREAM_REMOTE_ADDRESS%"
+                          authority: "%REQ(:AUTHORITY)%"
+
+  clusters:
+    - name: identity_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: identity_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: identity-service
+                      port_value: 8081
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 1024
+            max_pending_requests: 512
+            max_requests: 1024
+            max_retries: 3
+
+    - name: user_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: user_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: user-service
+                      port_value: 8082
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 1024
+            max_pending_requests: 512
+            max_requests: 1024
+            max_retries: 3
+
+    - name: account_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: account_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: account-service
+                      port_value: 8083
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 1024
+            max_pending_requests: 512
+            max_requests: 1024
+            max_retries: 3
+
+    - name: ledger_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: ledger_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: ledger-service
+                      port_value: 8084
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 1024
+            max_pending_requests: 512
+            max_requests: 1024
+            max_retries: 3
+
+    - name: payment_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: payment_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: payment-service
+                      port_value: 8085
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 512
+            max_pending_requests: 256
+            max_requests: 512
+            max_retries: 3
+
+    - name: transfer_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: transfer_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: transfer-service
+                      port_value: 8086
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 512
+            max_pending_requests: 256
+            max_requests: 512
+            max_retries: 3
+
+    - name: card_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: card_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: card-service
+                      port_value: 8087
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 1024
+            max_pending_requests: 512
+            max_requests: 1024
+            max_retries: 3
+
+    - name: pot_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: pot_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: pot-service
+                      port_value: 8088
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 1024
+            max_pending_requests: 512
+            max_requests: 1024
+            max_retries: 3
+
+    - name: notification_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: notification_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: notification-service
+                      port_value: 8090
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 1024
+            max_pending_requests: 512
+            max_requests: 1024
+            max_retries: 3
+
+    - name: control_plane_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: control_plane_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: control-plane-service
+                      port_value: 8096
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 1024
+            max_pending_requests: 512
+            max_requests: 1024
+            max_retries: 3
+
+    - name: replay_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: replay_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: replay-service
+                      port_value: 8092
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 1024
+            max_pending_requests: 512
+            max_requests: 1024
+            max_retries: 3
+
+    - name: simulation_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: simulation_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: simulation-service
+                      port_value: 8093
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 512
+            max_pending_requests: 256
+            max_requests: 512
+            max_retries: 3
+
+    - name: policy_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: policy_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: policy-service
+                      port_value: 8094
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 1024
+            max_pending_requests: 512
+            max_requests: 1024
+            max_retries: 3
+
+    - name: reconciliation_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: reconciliation_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: reconciliation-service
+                      port_value: 8091
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 512
+            max_pending_requests: 256
+            max_requests: 512
+            max_retries: 3
+
+    - name: incident_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: incident_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: incident-service
+                      port_value: 8097
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 1024
+            max_pending_requests: 512
+            max_requests: 1024
+            max_retries: 3
+
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
+
+overload_manager:
+  refresh_interval: 0.25s
+  resource_monitors:
+    - name: envoy.resource_monitors.fixed_heap
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.resource_monitors.fixed_heap.v3.FixedHeapConfig
+        max_heap_size_bytes: 2147483648
+  actions:
+    - name: envoy.overload_actions.shrink_heap
+      triggers:
+        - name: envoy.resource_monitors.fixed_heap
+          threshold:
+            value: 0.85
+    - name: envoy.overload_actions.stop_accepting_requests
+      triggers:
+        - name: envoy.resource_monitors.fixed_heap
+          threshold:
+            value: 0.95

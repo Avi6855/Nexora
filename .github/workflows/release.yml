@@ -1,0 +1,37 @@
+name: Nexora Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Build Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Build Go services
+        run: |
+          for dir in services/*/; do
+            if [ -f "$dir/cmd/main.go" ]; then
+              CGO_ENABLED=0 GOOS=linux go build -o /tmp/nexora-$(basename $dir) ./$dir/cmd/
+            fi
+          done
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Build Release APK
+        working-directory: android
+        run: ./gradlew assembleRelease
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            android/app/build/outputs/apk/release/*.apk

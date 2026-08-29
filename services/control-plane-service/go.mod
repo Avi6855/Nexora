@@ -1,0 +1,12 @@
+module github.com/nexora/nexora/services/control-plane-service
+
+go 1.24
+
+require (
+	github.com/google/uuid v1.6.0
+	github.com/gorilla/mux v1.8.1
+	github.com/rs/zerolog v1.32.0
+	github.com/nexora/nexora/shared v0.0.0
+)
+
+replace github.com/nexora/nexora/shared => ../../shared
