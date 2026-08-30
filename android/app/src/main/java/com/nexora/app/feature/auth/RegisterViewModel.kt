@@ -74,7 +74,7 @@ class RegisterViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = RegisterUiState.Loading
             try {
-                val response = authApi.register(
+                val tokens = authApi.register(
                     RegisterRequest(
                         email = _email.value,
                         password = _password.value,
@@ -84,11 +84,11 @@ class RegisterViewModel @Inject constructor(
                         deviceId = android.os.Build.MODEL
                     )
                 )
-                if (response.isSuccess && response.data != null) {
-                    tokenStorage.saveTokens(response.data.accessToken, response.data.refreshToken)
+                if (tokens.accessToken.isNotBlank()) {
+                    tokenStorage.saveTokens(tokens.accessToken, tokens.refreshToken)
                     _uiState.value = RegisterUiState.Success(_email.value)
                 } else {
-                    _uiState.value = RegisterUiState.Error(response.error ?: response.message ?: "Registration failed")
+                    _uiState.value = RegisterUiState.Error("Registration failed")
                 }
             } catch (e: Exception) {
                 _uiState.value = RegisterUiState.Error(e.message ?: "Network error occurred")

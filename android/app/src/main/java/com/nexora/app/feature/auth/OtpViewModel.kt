@@ -48,18 +48,18 @@ class OtpViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = OtpUiState.Loading
             try {
-                val response = authApi.verifyOtp(
+                val tokens = authApi.verifyOtp(
                     OtpRequest(
                         email = email,
                         otp = _otp.value,
                         deviceId = android.os.Build.MODEL
                     )
                 )
-                if (response.isSuccess && response.data != null) {
-                    tokenStorage.saveTokens(response.data.accessToken, response.data.refreshToken)
+                if (tokens.accessToken.isNotBlank()) {
+                    tokenStorage.saveTokens(tokens.accessToken, tokens.refreshToken)
                     _uiState.value = OtpUiState.Success
                 } else {
-                    _uiState.value = OtpUiState.Error(response.error ?: response.message ?: "Verification failed")
+                    _uiState.value = OtpUiState.Error("Verification failed")
                 }
             } catch (e: Exception) {
                 _uiState.value = OtpUiState.Error(e.message ?: "Network error occurred")

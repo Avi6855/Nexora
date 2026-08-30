@@ -2,7 +2,6 @@ package com.nexora.app.feature.auth
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.nexora.app.core.model.AuthTokens
 import com.nexora.app.core.network.api.AuthApi
 import com.nexora.app.core.network.api.LoginRequest
 import com.nexora.app.core.security.SecureTokenStorage
@@ -47,19 +46,19 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = LoginUiState.Loading
             try {
-                val response = authApi.login(
+                val tokens = authApi.login(
                     LoginRequest(
                         email = _email.value,
                         password = _password.value,
                         deviceId = android.os.Build.MODEL
                     )
                 )
-                if (response.isSuccess && response.data != null) {
-                    tokenStorage.saveTokens(response.data.accessToken, response.data.refreshToken)
+                if (tokens.accessToken.isNotBlank()) {
+                    tokenStorage.saveTokens(tokens.accessToken, tokens.refreshToken)
                     tokenStorage.saveUserEmail(_email.value)
                     _uiState.value = LoginUiState.Success(_email.value)
                 } else {
-                    _uiState.value = LoginUiState.Error(response.error ?: response.message ?: "Login failed")
+                    _uiState.value = LoginUiState.Error("Login failed")
                 }
             } catch (e: Exception) {
                 _uiState.value = LoginUiState.Error(e.message ?: "Network error occurred")

@@ -1,11 +1,10 @@
 package com.nexora.app.core.model
 
-import kotlinx.serialization.Serializable
+import com.google.gson.annotations.SerializedName
 
-@Serializable
 data class AuthTokens(
-    val accessToken: String = "",
-    val refreshToken: String = "",
-    val expiresIn: Long = 0,
+    @SerializedName("access_token") val accessToken: String = "",
+    @SerializedName("refresh_token") val refreshToken: String = "",
+    @SerializedName("expires_at") val expiresAt: Long = 0,
     val tokenType: String = "Bearer"
 )
