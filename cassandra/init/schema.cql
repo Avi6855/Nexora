@@ -12,11 +12,14 @@ CREATE TABLE IF NOT EXISTS users (
   user_id UUID PRIMARY KEY,
   email TEXT,
   phone TEXT,
+  password_hash TEXT,
   first_name TEXT,
   last_name TEXT,
   date_of_birth DATE,
   status TEXT,
   kyc_status TEXT,
+  email_verified BOOLEAN,
+  phone_verified BOOLEAN,
   created_at TIMESTAMP,
   updated_at TIMESTAMP
 );

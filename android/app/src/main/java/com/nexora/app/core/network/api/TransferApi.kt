@@ -14,7 +14,7 @@ interface TransferApi {
         @Query("offset") offset: Int = 0
     ): ApiResponse<List<Transaction>>
 
-    @GET("v1/transactions/{transactionId}")
+    @GET("v1/transfers/{transactionId}")
     suspend fun getTransaction(
         @Path("transactionId") transactionId: String
     ): ApiResponse<Transaction>
