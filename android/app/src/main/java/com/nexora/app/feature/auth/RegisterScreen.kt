@@ -56,11 +56,13 @@ fun RegisterScreen(
         contentVisible = true
     }
 
-    when (val state = uiState) {
-        is RegisterUiState.Success -> {
-            onNavigateToOtp(state.email)
+    LaunchedEffect(uiState) {
+        when (val state = uiState) {
+            is RegisterUiState.Success -> {
+                onNavigateToOtp(state.email)
+            }
+            else -> {}
         }
-        else -> {}
     }
 
     Scaffold(

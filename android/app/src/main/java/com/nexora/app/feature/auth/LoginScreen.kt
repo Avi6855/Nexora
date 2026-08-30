@@ -55,11 +55,13 @@ fun LoginScreen(
         contentVisible = true
     }
 
-    when (val state = uiState) {
-        is LoginUiState.Success -> {
-            onNavigateToOtp(state.email)
+    LaunchedEffect(uiState) {
+        when (val state = uiState) {
+            is LoginUiState.Success -> {
+                onNavigateToHome()
+            }
+            else -> {}
         }
-        else -> {}
     }
 
     Column(
