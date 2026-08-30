@@ -27,7 +27,7 @@ class TokenAuthenticator @Inject constructor(
             }
 
             val refreshRequest = Request.Builder()
-                .url("http://10.0.2.2:8000/api/v1/auth/refresh")
+                .url("http://10.0.2.2:8000/v1/auth/refresh")
                 .post(
                     """{"refresh_token":"$refreshToken"}"""
                         .toRequestBody("application/json".toMediaType())

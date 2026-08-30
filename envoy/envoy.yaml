@@ -44,13 +44,7 @@ static_resources:
                               audiences:
                                 - nexora-api
                         - match:
-                            prefix: /v1/auth/token
-                          requires: {}
-                        - match:
-                            prefix: /v1/auth/
-                          requires: {}
-                        - match:
-                            prefix: /v1/auth/refresh
+                            prefix: /v1/auth
                           requires: {}
                         - match:
                             prefix: /v1/health
@@ -66,7 +60,7 @@ static_resources:
                       routes:
                         # ── Auth ──
                         - match:
-                            prefix: /v1/auth/
+                            prefix: /v1/auth
                           route:
                             cluster: identity_service
                             timeout: 30s
@@ -81,28 +75,28 @@ static_resources:
 
                         # ── Users ──
                         - match:
-                            prefix: /v1/users/
+                            prefix: /v1/users
                           route:
                             cluster: user_service
                             timeout: 30s
 
                         # ── Accounts ──
                         - match:
-                            prefix: /v1/accounts/
+                            prefix: /v1/accounts
                           route:
                             cluster: account_service
                             timeout: 30s
 
                         # ── Ledger ──
                         - match:
-                            prefix: /v1/ledger/
+                            prefix: /v1/ledger
                           route:
                             cluster: ledger_service
                             timeout: 30s
 
                         # ── Payments ──
                         - match:
-                            prefix: /v1/payments/
+                            prefix: /v1/payments
                           route:
                             cluster: payment_service
                             timeout: 120s
@@ -113,7 +107,7 @@ static_resources:
 
                         # ── Transfers ──
                         - match:
-                            prefix: /v1/transfers/
+                            prefix: /v1/transfers
                           route:
                             cluster: transfer_service
                             timeout: 120s
@@ -124,70 +118,70 @@ static_resources:
 
                         # ── Cards ──
                         - match:
-                            prefix: /v1/cards/
+                            prefix: /v1/cards
                           route:
                             cluster: card_service
                             timeout: 30s
 
                         # ── Pots ──
                         - match:
-                            prefix: /v1/pots/
+                            prefix: /v1/pots
                           route:
                             cluster: pot_service
                             timeout: 30s
 
                         # ── Notifications ──
                         - match:
-                            prefix: /v1/notifications/
+                            prefix: /v1/notifications
                           route:
                             cluster: notification_service
                             timeout: 30s
 
                         # ── Security / Control Plane ──
                         - match:
-                            prefix: /v1/security/
+                            prefix: /v1/security
                           route:
                             cluster: control_plane_service
                             timeout: 30s
 
                         # ── Engineering / Replay ──
                         - match:
-                            prefix: /v1/engineering/
+                            prefix: /v1/engineering
                           route:
                             cluster: replay_service
                             timeout: 30s
 
                         # ── Simulations ──
                         - match:
-                            prefix: /v1/simulations/
+                            prefix: /v1/simulations
                           route:
                             cluster: simulation_service
                             timeout: 60s
 
                         # ── Policies ──
                         - match:
-                            prefix: /v1/policies/
+                            prefix: /v1/policies
                           route:
                             cluster: policy_service
                             timeout: 30s
 
                         # ── Reconciliation ──
                         - match:
-                            prefix: /v1/reconciliation/
+                            prefix: /v1/reconciliation
                           route:
                             cluster: reconciliation_service
                             timeout: 60s
 
                         # ── Incidents ──
                         - match:
-                            prefix: /v1/incidents/
+                            prefix: /v1/incidents
                           route:
                             cluster: incident_service
                             timeout: 30s
 
                         # ── Chaos ──
                         - match:
-                            prefix: /v1/chaos/
+                            prefix: /v1/chaos
                           route:
                             cluster: simulation_service
                             timeout: 60s
