@@ -83,7 +83,7 @@ func (r *cassandraAccountRepository) GetByUserID(ctx context.Context, userID uui
 	var accounts []*domain.Account
 
 	query := `SELECT account_id, user_id, account_type, currency, available_balance, current_balance, reserved_balance, status, created_at, updated_at
-		FROM accounts WHERE user_id = ?`
+		FROM accounts WHERE user_id = ? ALLOW FILTERING`
 
 	iter := r.session.Query(query, userID).WithContext(ctx).Iter()
 	defer iter.Close()

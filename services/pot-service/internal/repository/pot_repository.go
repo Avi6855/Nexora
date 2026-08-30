@@ -72,23 +72,21 @@ func (r *cassandraPotRepository) GetByID(ctx context.Context, id uuid.UUID) (*do
 }
 
 func (r *cassandraPotRepository) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*domain.Pot, error) {
+	var pots []*domain.Pot
+
+	// Query pots_by_user lookup table to get pot_ids, then fetch each pot
 	iter := r.session.Query(
-		`SELECT pot_id, user_id, name, target_amount, current_amount, currency, status, created_at, updated_at
-		FROM pots WHERE user_id = ?`, userID,
+		`SELECT pot_id FROM pots_by_user WHERE user_id = ?`, userID,
 	).WithContext(ctx).Iter()
 	defer iter.Close()
 
-	var pots []*domain.Pot
-	var pot domain.Pot
-	var status string
-
-	for iter.Scan(
-		&pot.PotID, &pot.UserID, &pot.Name, &pot.TargetAmount, &pot.CurrentAmount,
-		&pot.Currency, &status, &pot.CreatedAt, &pot.UpdatedAt,
-	) {
-		pot.Status = domain.PotStatus(status)
-		p := pot
-		pots = append(pots, &p)
+	var potID gocql.UUID
+	for iter.Scan(&potID) {
+		pot, err := r.GetByID(ctx, uuid.UUID(potID))
+		if err != nil {
+			continue
+		}
+		pots = append(pots, pot)
 	}
 
 	if err := iter.Close(); err != nil {

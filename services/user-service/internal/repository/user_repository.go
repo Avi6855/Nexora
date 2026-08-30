@@ -26,12 +26,13 @@ func NewCassandraUserRepository(session *gocql.Session) UserRepository {
 func (r *cassandraUserRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error) {
 	var user domain.User
 	var status string
+	var userID gocql.UUID
 
 	query := `SELECT user_id, email, phone, first_name, last_name, status, created_at, updated_at
 		FROM users WHERE user_id = ?`
 
-	err := r.session.Query(query, id).WithContext(ctx).Scan(
-		&user.UserID,
+	err := r.session.Query(query, gocql.UUID(id)).WithContext(ctx).Scan(
+		&userID,
 		&user.Email,
 		&user.Phone,
 		&user.FirstName,
@@ -48,6 +49,7 @@ func (r *cassandraUserRepository) GetByID(ctx context.Context, id uuid.UUID) (*d
 		return nil, err
 	}
 
+	user.UserID = uuid.UUID(userID)
 	user.Status = domain.UserStatus(status)
 	return &user, nil
 }

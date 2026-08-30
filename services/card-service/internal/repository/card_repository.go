@@ -80,29 +80,21 @@ func (r *cassandraCardRepository) GetByID(ctx context.Context, id uuid.UUID) (*d
 }
 
 func (r *cassandraCardRepository) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*domain.Card, error) {
+	var cards []*domain.Card
+
+	// Query cards_by_user lookup table to get card_ids, then fetch each card
 	iter := r.session.Query(
-		`SELECT card_id, user_id, account_id, card_number_last4, card_type, status, spending_limit, daily_limit, created_at, updated_at
-		FROM cards WHERE user_id = ?`, userID,
+		`SELECT card_id FROM cards_by_user WHERE user_id = ?`, userID,
 	).WithContext(ctx).Iter()
 	defer iter.Close()
 
-	var cards []*domain.Card
-	var card domain.Card
-	var cardType, status string
-
-	for iter.Scan(
-		&card.CardID, &card.UserID, &card.AccountID, &card.CardNumberLast4,
-		&cardType, &status, &card.SpendingLimit, &card.DailyLimit,
-		&card.CreatedAt, &card.UpdatedAt,
-	) {
-		card.CardType = domain.CardType(cardType)
-		card.Status = domain.CardStatus(status)
-		card.SpendingControls = domain.SpendingControls{
-			DailyLimit:   card.DailyLimit,
-			MonthlyLimit: card.MonthlyLimit,
+	var cardID gocql.UUID
+	for iter.Scan(&cardID) {
+		card, err := r.GetByID(ctx, uuid.UUID(cardID))
+		if err != nil {
+			continue
 		}
-		c := card
-		cards = append(cards, &c)
+		cards = append(cards, card)
 	}
 
 	if err := iter.Close(); err != nil {
