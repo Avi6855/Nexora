@@ -30,7 +30,7 @@ func (r *cassandraPotRepository) Create(ctx context.Context, pot *domain.Pot) er
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	if err := r.session.Query(query,
-		pot.PotID, pot.UserID, pot.Name, pot.TargetAmount, pot.CurrentAmount,
+		gocql.UUID(pot.PotID), gocql.UUID(pot.UserID), pot.Name, pot.TargetAmount, pot.CurrentAmount,
 		pot.Currency, string(pot.Status), pot.CreatedAt, pot.UpdatedAt,
 	).WithContext(ctx).Exec(); err != nil {
 		return fmt.Errorf("inserting pot: %w", err)
@@ -40,7 +40,7 @@ func (r *cassandraPotRepository) Create(ctx context.Context, pot *domain.Pot) er
 		VALUES (?, ?, ?, ?, ?)`
 
 	if err := r.session.Query(indexQuery,
-		pot.UserID, pot.PotID, pot.Name, string(pot.Status), pot.CreatedAt,
+		gocql.UUID(pot.UserID), gocql.UUID(pot.PotID), pot.Name, string(pot.Status), pot.CreatedAt,
 	).WithContext(ctx).Exec(); err != nil {
 		return fmt.Errorf("inserting pot index: %w", err)
 	}
@@ -50,13 +50,14 @@ func (r *cassandraPotRepository) Create(ctx context.Context, pot *domain.Pot) er
 
 func (r *cassandraPotRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Pot, error) {
 	var pot domain.Pot
+	var potID, userID gocql.UUID
 	var status string
 
 	query := `SELECT pot_id, user_id, name, target_amount, current_amount, currency, status, created_at, updated_at
 		FROM pots WHERE pot_id = ?`
 
-	err := r.session.Query(query, id).WithContext(ctx).Scan(
-		&pot.PotID, &pot.UserID, &pot.Name, &pot.TargetAmount, &pot.CurrentAmount,
+	err := r.session.Query(query, gocql.UUID(id)).WithContext(ctx).Scan(
+		&potID, &userID, &pot.Name, &pot.TargetAmount, &pot.CurrentAmount,
 		&pot.Currency, &status, &pot.CreatedAt, &pot.UpdatedAt,
 	)
 
@@ -67,16 +68,18 @@ func (r *cassandraPotRepository) GetByID(ctx context.Context, id uuid.UUID) (*do
 		return nil, err
 	}
 
+	pot.PotID = uuid.UUID(potID)
+	pot.UserID = uuid.UUID(userID)
 	pot.Status = domain.PotStatus(status)
 	return &pot, nil
 }
 
 func (r *cassandraPotRepository) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*domain.Pot, error) {
-	var pots []*domain.Pot
+	pots := make([]*domain.Pot, 0)
 
 	// Query pots_by_user lookup table to get pot_ids, then fetch each pot
 	iter := r.session.Query(
-		`SELECT pot_id FROM pots_by_user WHERE user_id = ?`, userID,
+		`SELECT pot_id FROM pots_by_user WHERE user_id = ?`, gocql.UUID(userID),
 	).WithContext(ctx).Iter()
 	defer iter.Close()
 
@@ -98,14 +101,14 @@ func (r *cassandraPotRepository) GetByUserID(ctx context.Context, userID uuid.UU
 func (r *cassandraPotRepository) Update(ctx context.Context, pot *domain.Pot) error {
 	query := `UPDATE pots SET name = ?, current_amount = ?, status = ?, updated_at = ? WHERE pot_id = ?`
 	if err := r.session.Query(query,
-		pot.Name, pot.CurrentAmount, string(pot.Status), pot.UpdatedAt, pot.PotID,
+		pot.Name, pot.CurrentAmount, string(pot.Status), pot.UpdatedAt, gocql.UUID(pot.PotID),
 	).WithContext(ctx).Exec(); err != nil {
 		return fmt.Errorf("updating pot: %w", err)
 	}
 
 	indexQuery := `UPDATE pots_by_user SET name = ?, status = ? WHERE user_id = ? AND pot_id = ?`
 	return r.session.Query(indexQuery,
-		pot.Name, string(pot.Status), pot.UserID, pot.PotID,
+		pot.Name, string(pot.Status), gocql.UUID(pot.UserID), gocql.UUID(pot.PotID),
 	).WithContext(ctx).Exec()
 }
 
@@ -115,12 +118,12 @@ func (r *cassandraPotRepository) Delete(ctx context.Context, id uuid.UUID) error
 		return err
 	}
 
-	if err := r.session.Query(`DELETE FROM pots WHERE pot_id = ?`, id).WithContext(ctx).Exec(); err != nil {
+	if err := r.session.Query(`DELETE FROM pots WHERE pot_id = ?`, gocql.UUID(id)).WithContext(ctx).Exec(); err != nil {
 		return fmt.Errorf("deleting pot: %w", err)
 	}
 
 	if err := r.session.Query(`DELETE FROM pots_by_user WHERE user_id = ? AND pot_id = ?`,
-		pot.UserID, pot.PotID).WithContext(ctx).Exec(); err != nil {
+		gocql.UUID(pot.UserID), gocql.UUID(pot.PotID)).WithContext(ctx).Exec(); err != nil {
 		return fmt.Errorf("deleting pot index: %w", err)
 	}
 

@@ -34,13 +34,11 @@ class CardsViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = CardsUiState.Loading
             try {
-                val response = cardApi.getCards()
-                if (response.isSuccess && !response.data.isNullOrEmpty()) {
-                    _uiState.value = CardsUiState.Success(response.data)
-                } else if (response.data.isNullOrEmpty()) {
-                    _uiState.value = CardsUiState.Empty
+                val cards = cardApi.getCards()
+                if (cards.isNotEmpty()) {
+                    _uiState.value = CardsUiState.Success(cards)
                 } else {
-                    _uiState.value = CardsUiState.Error(response.error ?: "Failed to load cards")
+                    _uiState.value = CardsUiState.Empty
                 }
             } catch (e: Exception) {
                 _uiState.value = CardsUiState.Error(e.message ?: "Network error occurred")

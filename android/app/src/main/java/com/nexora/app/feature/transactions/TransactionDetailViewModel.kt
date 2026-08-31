@@ -37,12 +37,8 @@ class TransactionDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = TransactionDetailUiState.Loading
             try {
-                val response = transferApi.getTransaction(transactionId)
-                if (response.isSuccess && response.data != null) {
-                    _uiState.value = TransactionDetailUiState.Success(response.data)
-                } else {
-                    _uiState.value = TransactionDetailUiState.Error(response.error ?: "Failed to load transaction")
-                }
+                val transaction = transferApi.getTransaction(transactionId)
+                _uiState.value = TransactionDetailUiState.Success(transaction)
             } catch (e: Exception) {
                 _uiState.value = TransactionDetailUiState.Error(e.message ?: "Network error occurred")
             }

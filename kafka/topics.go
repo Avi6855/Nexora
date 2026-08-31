@@ -13,6 +13,7 @@ const (
 	TopicPaymentCreated       = "nexora.payment.created"
 	TopicPaymentAuthorized    = "nexora.payment.authorized"
 	TopicPaymentConfirmed     = "nexora.payment.confirmed"
+	TopicPaymentSettled       = "nexora.payment.settled"
 	TopicPaymentFailed        = "nexora.payment.failed"
 	TopicPaymentReversed      = "nexora.payment.reversed"
 	TopicTransferCreated      = "nexora.transfer.created"
@@ -55,6 +56,16 @@ const (
 	TopicIncidentUpdated      = "nexora.incident.updated"
 	TopicIncidentResolved     = "nexora.incident.resolved"
 	TopicAuditLog             = "nexora.audit.log"
+
+	// Dead-Letter Queue topics
+	TopicPaymentDLQ       = "nexora.payment.dlq"
+	TopicTransferDLQ      = "nexora.transfer.dlq"
+	TopicCardDLQ          = "nexora.card.dlq"
+	TopicPotDLQ           = "nexora.pot.dlq"
+	TopicLedgerDLQ        = "nexora.ledger.dlq"
+	TopicNotificationDLQ  = "nexora.notification.dlq"
+	TopicFraudDLQ         = "nexora.fraud.dlq"
+	TopicAuditDLQ         = "nexora.audit.dlq"
 )
 
 var AllTopics = []string{
@@ -68,6 +79,7 @@ var AllTopics = []string{
 	TopicPaymentCreated,
 	TopicPaymentAuthorized,
 	TopicPaymentConfirmed,
+	TopicPaymentSettled,
 	TopicPaymentFailed,
 	TopicPaymentReversed,
 	TopicTransferCreated,
@@ -110,4 +122,14 @@ var AllTopics = []string{
 	TopicIncidentUpdated,
 	TopicIncidentResolved,
 	TopicAuditLog,
+
+	// Dead-Letter Queue topics
+	TopicPaymentDLQ,
+	TopicTransferDLQ,
+	TopicCardDLQ,
+	TopicPotDLQ,
+	TopicLedgerDLQ,
+	TopicNotificationDLQ,
+	TopicFraudDLQ,
+	TopicAuditDLQ,
 }

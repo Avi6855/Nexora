@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
 
+	"github.com/IBM/sarama"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
@@ -39,11 +39,10 @@ type EventPublisher interface {
 }
 
 type KafkaEventPublisher struct {
+	producer  sarama.AsyncProducer
 	producerID  string
 	topicPrefix string
 	logger      zerolog.Logger
-	published   []*CardEventEnvelope
-	mu          sync.Mutex
 }
 
 type KafkaPublisherConfig struct {
@@ -60,11 +59,46 @@ func NewKafkaEventPublisher(cfg KafkaPublisherConfig) *KafkaEventPublisher {
 	if cfg.TopicPrefix == "" {
 		cfg.TopicPrefix = "nexora"
 	}
-	return &KafkaEventPublisher{
+
+	config := sarama.NewConfig()
+	config.Producer.Return.Successes = true
+	config.Producer.Return.Errors = true
+	config.Producer.RequiredAcks = sarama.WaitForLocal
+	config.Producer.Timeout = 5 * time.Second
+
+	producer, err := sarama.NewAsyncProducer(cfg.Brokers, config)
+	if err != nil {
+		cfg.Logger.Warn().Err(err).Msg("failed to create sarama producer, events will not be published")
+		return &KafkaEventPublisher{
+			producer:    nil,
+			producerID:  cfg.ProducerID,
+			topicPrefix: cfg.TopicPrefix,
+			logger:      cfg.Logger,
+		}
+	}
+
+	p := &KafkaEventPublisher{
+		producer:    producer,
 		producerID:  cfg.ProducerID,
 		topicPrefix: cfg.TopicPrefix,
 		logger:      cfg.Logger,
-		published:   make([]*CardEventEnvelope, 0),
+	}
+
+	go p.handleSuccesses()
+	go p.handleErrors()
+
+	return p
+}
+
+func (p *KafkaEventPublisher) handleSuccesses() {
+	for msg := range p.producer.Successes() {
+		p.logger.Debug().Str("topic", msg.Topic).Int32("partition", msg.Partition).Int64("offset", msg.Offset).Msg("card event sent")
+	}
+}
+
+func (p *KafkaEventPublisher) handleErrors() {
+	for err := range p.producer.Errors() {
+		p.logger.Error().Err(err).Msg("failed to send card event")
 	}
 }
 
@@ -93,30 +127,46 @@ func (p *KafkaEventPublisher) PublishCardEvent(ctx context.Context, eventType Ev
 
 	topic := fmt.Sprintf("%s.%s", p.topicPrefix, string(eventType))
 
-	p.mu.Lock()
-	p.published = append(p.published, event)
-	p.mu.Unlock()
+	if p.producer == nil {
+		p.logger.Warn().Str("event_type", string(eventType)).Str("aggregate_id", aggregateID).Msg("kafka unavailable, event not published")
+		return nil
+	}
 
-	p.logger.Info().
-		Str("event_id", event.EventID).
-		Str("event_type", string(eventType)).
-		Str("aggregate_id", aggregateID).
-		Str("topic", topic).
-		Msg("published card event")
+	eventData, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("marshaling event envelope: %w", err)
+	}
 
-	return nil
-}
+	msg := &sarama.ProducerMessage{
+		Topic: topic,
+		Key:   sarama.StringEncoder(string(eventType)),
+		Value: sarama.ByteEncoder(eventData),
+		Headers: []sarama.RecordHeader{
+			{Key: []byte("event_type"), Value: []byte(string(eventType))},
+			{Key: []byte("event_id"), Value: []byte(event.EventID)},
+			{Key: []byte("timestamp"), Value: []byte(event.Timestamp.Format(time.RFC3339))},
+		},
+	}
 
-func (p *KafkaEventPublisher) GetPublishedEvents() []*CardEventEnvelope {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	result := make([]*CardEventEnvelope, len(p.published))
-	copy(result, p.published)
-	return result
+	select {
+	case p.producer.Input() <- msg:
+		p.logger.Info().
+			Str("event_id", event.EventID).
+			Str("event_type", string(eventType)).
+			Str("aggregate_id", aggregateID).
+			Str("topic", topic).
+			Msg("card event queued")
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (p *KafkaEventPublisher) Close() error {
-	return nil
+	if p.producer == nil {
+		return nil
+	}
+	return p.producer.Close()
 }
 
 type NoOpEventPublisher struct{}

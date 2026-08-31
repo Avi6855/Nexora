@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,16 +29,29 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.nexora.app.core.design.theme.NexoraPrimary
-import kotlinx.coroutines.delay
 
 @Composable
 fun PaymentProcessingScreen(
     paymentId: String,
     onNavigateToSuccess: (String) -> Unit,
     onNavigateToFailed: (String) -> Unit,
-    onNavigateToUnknown: (String) -> Unit
+    onNavigateToUnknown: (String) -> Unit,
+    viewModel: PaymentProcessingViewModel = hiltViewModel()
 ) {
+    val uiState by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(uiState) {
+        when (val state = uiState) {
+            is PaymentProcessingUiState.Success -> onNavigateToSuccess(paymentId)
+            is PaymentProcessingUiState.Failed -> onNavigateToFailed(paymentId)
+            is PaymentProcessingUiState.Unknown -> onNavigateToUnknown(paymentId)
+            is PaymentProcessingUiState.Error -> { /* show error below */ }
+            is PaymentProcessingUiState.Processing -> { /* keep showing spinner */ }
+        }
+    }
+
     val infiniteTransition = rememberInfiniteTransition(label = "processing")
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -57,11 +71,6 @@ fun PaymentProcessingScreen(
         ),
         label = "pulse"
     )
-
-    LaunchedEffect(paymentId) {
-        delay(3000)
-        onNavigateToSuccess(paymentId)
-    }
 
     Box(
         modifier = Modifier
@@ -93,12 +102,21 @@ fun PaymentProcessingScreen(
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Please wait while we process your payment.\nThis may take a few moments.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
+            if (uiState is PaymentProcessingUiState.Error) {
+                Text(
+                    text = (uiState as PaymentProcessingUiState.Error).message,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center
+                )
+            } else {
+                Text(
+                    text = "Please wait while we process your payment.\nThis may take a few moments.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }

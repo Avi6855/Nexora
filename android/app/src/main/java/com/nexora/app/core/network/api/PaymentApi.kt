@@ -1,5 +1,6 @@
 package com.nexora.app.core.network.api
 
+import com.google.gson.annotations.SerializedName
 import com.nexora.app.core.model.ApiResponse
 import com.nexora.app.core.model.Payment
 import kotlinx.serialization.Serializable
@@ -12,17 +13,25 @@ import retrofit2.http.Path
 
 @Serializable
 data class CreatePaymentRequest(
+    @SerializedName("account_id")
     @SerialName("account_id")
     val accountId: String,
+    @SerializedName("amount")
     val amount: Long,
+    @SerializedName("currency")
     val currency: String = "GBP",
+    @SerializedName("recipient_name")
     @SerialName("recipient_name")
     val recipientName: String,
+    @SerializedName("recipient_account_number")
     @SerialName("recipient_account_number")
     val recipientAccountNumber: String,
+    @SerializedName("recipient_sort_code")
     @SerialName("recipient_sort_code")
     val recipientSortCode: String,
+    @SerializedName("reference")
     val reference: String = "",
+    @SerializedName("description")
     val description: String = ""
 )
 

@@ -28,7 +28,6 @@ import com.nexora.app.feature.payments.PaymentFailedScreen
 import com.nexora.app.feature.payments.PaymentProcessingScreen
 import com.nexora.app.feature.payments.PaymentSuccessScreen
 import com.nexora.app.feature.payments.PaymentUnknownScreen
-import com.nexora.app.feature.payments.ReviewPaymentScreen
 import com.nexora.app.feature.payments.SendMoneyScreen
 import com.nexora.app.feature.pots.PotsScreen
 import com.nexora.app.feature.profile.ProfileScreen
@@ -234,18 +233,6 @@ fun NexoraNavGraph() {
                 val accountId = backStackEntry.arguments?.getString("accountId") ?: ""
                 SendMoneyScreen(
                     accountId = accountId,
-                    onNavigateBack = { navController.popBackStack() },
-                    onNavigateToReview = { navController.navigate(Screen.ReviewPayment.route) }
-                )
-            }
-
-            composable(Screen.ReviewPayment.route) {
-                ReviewPaymentScreen(
-                    recipientName = "",
-                    sortCode = "",
-                    accountNumber = "",
-                    amount = "",
-                    reference = "",
                     onNavigateBack = { navController.popBackStack() },
                     onNavigateToProcessing = { paymentId ->
                         navController.navigate(Screen.PaymentProcessing.createRoute(paymentId))

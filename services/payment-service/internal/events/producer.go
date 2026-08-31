@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
 
+	"github.com/IBM/sarama"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
@@ -37,16 +37,6 @@ type PaymentEventEnvelope struct {
 	EventVersion  int             `json:"event_version"`
 }
 
-type OutboxEntry struct {
-	ID          string
-	Topic       string
-	Key         string
-	Payload     []byte
-	Status      string
-	CreatedAt   time.Time
-	PublishedAt *time.Time
-}
-
 type PaymentEventPayload struct {
 	PaymentID           string            `json:"payment_id"`
 	IdempotencyKey      string            `json:"idempotency_key"`
@@ -73,13 +63,9 @@ type EventPublisher interface {
 
 type KafkaEventPublisher struct {
 	producerID   string
-	brokers      []string
 	topicPrefix  string
 	logger       zerolog.Logger
-	outbox       []*OutboxEntry
-	mu           sync.Mutex
-	useOutbox    bool
-	published    []*PaymentEventEnvelope
+	producer     sarama.AsyncProducer
 }
 
 type KafkaPublisherConfig struct {
@@ -97,13 +83,46 @@ func NewKafkaEventPublisher(cfg KafkaPublisherConfig) *KafkaEventPublisher {
 	if cfg.TopicPrefix == "" {
 		cfg.TopicPrefix = "nexora"
 	}
-	return &KafkaEventPublisher{
+
+	config := sarama.NewConfig()
+	config.Producer.Return.Successes = true
+	config.Producer.Return.Errors = true
+	config.Producer.RequiredAcks = sarama.WaitForLocal
+	config.Producer.Timeout = 5 * time.Second
+
+	producer, err := sarama.NewAsyncProducer(cfg.Brokers, config)
+	if err != nil {
+		cfg.Logger.Warn().Err(err).Msg("failed to create sarama producer, events will not be published")
+		return &KafkaEventPublisher{
+			producerID:  cfg.ProducerID,
+			topicPrefix: cfg.TopicPrefix,
+			logger:      cfg.Logger,
+			producer:    nil,
+		}
+	}
+
+	kp := &KafkaEventPublisher{
 		producerID:  cfg.ProducerID,
-		brokers:     cfg.Brokers,
 		topicPrefix: cfg.TopicPrefix,
 		logger:      cfg.Logger,
-		useOutbox:   cfg.UseOutbox,
-		published:   make([]*PaymentEventEnvelope, 0),
+		producer:    producer,
+	}
+
+	go kp.handleSuccesses()
+	go kp.handleErrors()
+
+	return kp
+}
+
+func (p *KafkaEventPublisher) handleSuccesses() {
+	for msg := range p.producer.Successes() {
+		p.logger.Debug().Str("topic", msg.Topic).Int32("partition", msg.Partition).Int64("offset", msg.Offset).Msg("message sent")
+	}
+}
+
+func (p *KafkaEventPublisher) handleErrors() {
+	for err := range p.producer.Errors() {
+		p.logger.Error().Err(err).Msg("failed to send message")
 	}
 }
 
@@ -126,82 +145,47 @@ func (p *KafkaEventPublisher) PublishPaymentEvent(ctx context.Context, eventType
 	}
 
 	topic := p.topicForEvent(eventType)
-	key := event.AggregateID
 
-	if p.useOutbox {
-		p.addToOutbox(topic, key, event)
+	if p.producer == nil {
+		p.logger.Warn().Str("event_type", string(eventType)).Str("aggregate_id", event.AggregateID).Msg("kafka unavailable, event not published")
+		return nil
 	}
 
-	p.mu.Lock()
-	p.published = append(p.published, event)
-	p.mu.Unlock()
+	data, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("marshaling event envelope: %w", err)
+	}
 
-	p.logger.Info().
-		Str("event_id", event.EventID).
-		Str("event_type", string(eventType)).
-		Str("aggregate_id", event.AggregateID).
-		Str("topic", topic).
-		Msg("published payment event")
+	msg := &sarama.ProducerMessage{
+		Topic: topic,
+		Key:   sarama.StringEncoder(event.AggregateID),
+		Value: sarama.ByteEncoder(data),
+		Headers: []sarama.RecordHeader{
+			{Key: []byte("event_type"), Value: []byte(string(eventType))},
+			{Key: []byte("timestamp"), Value: []byte(event.Timestamp.Format(time.RFC3339))},
+		},
+	}
 
-	return nil
+	select {
+	case p.producer.Input() <- msg:
+		p.logger.Info().
+			Str("event_id", event.EventID).
+			Str("event_type", string(eventType)).
+			Str("aggregate_id", event.AggregateID).
+			Str("topic", topic).
+			Msg("published payment event")
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (p *KafkaEventPublisher) topicForEvent(eventType EventType) string {
 	return fmt.Sprintf("%s.%s", p.topicPrefix, string(eventType))
 }
 
-func (p *KafkaEventPublisher) addToOutbox(topic, key string, event *PaymentEventEnvelope) {
-	data, err := json.Marshal(event)
-	if err != nil {
-		p.logger.Error().Err(err).Msg("failed to marshal event for outbox")
-		return
-	}
-
-	entry := &OutboxEntry{
-		ID:        uuid.New().String(),
-		Topic:     topic,
-		Key:       key,
-		Payload:   data,
-		Status:    "PENDING",
-		CreatedAt: time.Now().UTC(),
-	}
-
-	p.mu.Lock()
-	p.outbox = append(p.outbox, entry)
-	p.mu.Unlock()
-}
-
-func (p *KafkaEventPublisher) GetOutboxEntries() []*OutboxEntry {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	result := make([]*OutboxEntry, len(p.outbox))
-	copy(result, p.outbox)
-	return result
-}
-
-func (p *KafkaEventPublisher) GetPublishedEvents() []*PaymentEventEnvelope {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	result := make([]*PaymentEventEnvelope, len(p.published))
-	copy(result, p.published)
-	return result
-}
-
-func (p *KafkaEventPublisher) MarkOutboxPublished(id string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	now := time.Now().UTC()
-	for _, entry := range p.outbox {
-		if entry.ID == id {
-			entry.Status = "PUBLISHED"
-			entry.PublishedAt = &now
-			break
-		}
-	}
-}
-
 func (p *KafkaEventPublisher) Close() error {
-	return nil
+	return p.producer.Close()
 }
 
 func extractAggregateID(payment interface{}) string {

@@ -34,13 +34,11 @@ class AccountsViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = AccountsUiState.Loading
             try {
-                val response = accountApi.getAccounts()
-                if (response.isSuccess && !response.data.isNullOrEmpty()) {
-                    _uiState.value = AccountsUiState.Success(response.data)
-                } else if (response.data.isNullOrEmpty()) {
-                    _uiState.value = AccountsUiState.Empty
+                val accounts = accountApi.getAccounts()
+                if (accounts.isNotEmpty()) {
+                    _uiState.value = AccountsUiState.Success(accounts)
                 } else {
-                    _uiState.value = AccountsUiState.Error(response.error ?: "Failed to load accounts")
+                    _uiState.value = AccountsUiState.Empty
                 }
             } catch (e: Exception) {
                 _uiState.value = AccountsUiState.Error(e.message ?: "Network error occurred")

@@ -57,12 +57,13 @@ func (r *cassandraUserRepository) GetByID(ctx context.Context, id uuid.UUID) (*d
 func (r *cassandraUserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	var user domain.User
 	var status string
+	var userID gocql.UUID
 
 	query := `SELECT user_id, email, phone, first_name, last_name, status, created_at, updated_at
 		FROM users WHERE email = ? ALLOW FILTERING`
 
 	err := r.session.Query(query, email).WithContext(ctx).Scan(
-		&user.UserID,
+		&userID,
 		&user.Email,
 		&user.Phone,
 		&user.FirstName,
@@ -79,6 +80,7 @@ func (r *cassandraUserRepository) GetByEmail(ctx context.Context, email string) 
 		return nil, err
 	}
 
+	user.UserID = uuid.UUID(userID)
 	user.Status = domain.UserStatus(status)
 	return &user, nil
 }
@@ -92,6 +94,6 @@ func (r *cassandraUserRepository) Update(ctx context.Context, user *domain.User)
 		user.LastName,
 		user.Phone,
 		user.UpdatedAt,
-		user.UserID,
+		gocql.UUID(user.UserID),
 	).WithContext(ctx).Exec()
 }

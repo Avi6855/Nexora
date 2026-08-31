@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/gocql/gocql"
 	"github.com/google/uuid"
@@ -29,8 +30,8 @@ func (r *cassandraAccountRepository) Create(ctx context.Context, account *domain
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	return r.session.Query(query,
-		account.AccountID,
-		account.UserID,
+		gocql.UUID(account.AccountID),
+		gocql.UUID(account.UserID),
 		string(account.AccountType),
 		account.Currency,
 		account.AvailableBalance.Amount,
@@ -44,15 +45,16 @@ func (r *cassandraAccountRepository) Create(ctx context.Context, account *domain
 
 func (r *cassandraAccountRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Account, error) {
 	var account domain.Account
+	var accountID, userID gocql.UUID
 	var accountType, status string
 	var avail, cur, res int64
 
 	query := `SELECT account_id, user_id, account_type, currency, available_balance, current_balance, reserved_balance, status, created_at, updated_at
 		FROM accounts WHERE account_id = ?`
 
-	err := r.session.Query(query, id).WithContext(ctx).Scan(
-		&account.AccountID,
-		&account.UserID,
+	err := r.session.Query(query, gocql.UUID(id)).WithContext(ctx).Scan(
+		&accountID,
+		&userID,
 		&accountType,
 		&account.Currency,
 		&avail,
@@ -70,47 +72,62 @@ func (r *cassandraAccountRepository) GetByID(ctx context.Context, id uuid.UUID) 
 		return nil, err
 	}
 
+	account.AccountID = uuid.UUID(accountID)
+	account.UserID = uuid.UUID(userID)
 	account.AccountType = domain.AccountType(accountType)
 	account.Status = domain.AccountStatus(status)
 	account.AvailableBalance.Amount = avail
+	account.AvailableBalance.Currency = account.Currency
 	account.CurrentBalance.Amount = cur
+	account.CurrentBalance.Currency = account.Currency
 	account.ReservedBalance.Amount = res
+	account.ReservedBalance.Currency = account.Currency
 
 	return &account, nil
 }
 
 func (r *cassandraAccountRepository) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*domain.Account, error) {
-	var accounts []*domain.Account
+	accounts := make([]*domain.Account, 0)
 
 	query := `SELECT account_id, user_id, account_type, currency, available_balance, current_balance, reserved_balance, status, created_at, updated_at
 		FROM accounts WHERE user_id = ? ALLOW FILTERING`
 
-	iter := r.session.Query(query, userID).WithContext(ctx).Iter()
+	iter := r.session.Query(query, gocql.UUID(userID)).WithContext(ctx).Iter()
 	defer iter.Close()
 
-	var account domain.Account
-	var accountType, status string
+	var accountID, userIDCol gocql.UUID
+	var accountType, currency, status string
 	var avail, cur, res int64
+	var createdAt, updatedAt time.Time
 
 	for iter.Scan(
-		&account.AccountID,
-		&account.UserID,
+		&accountID,
+		&userIDCol,
 		&accountType,
-		&account.Currency,
+		&currency,
 		&avail,
 		&cur,
 		&res,
 		&status,
-		&account.CreatedAt,
-		&account.UpdatedAt,
+		&createdAt,
+		&updatedAt,
 	) {
+		account := &domain.Account{
+			AccountID: uuid.UUID(accountID),
+			UserID:    uuid.UUID(userIDCol),
+			Currency:  currency,
+			CreatedAt: createdAt,
+			UpdatedAt: updatedAt,
+		}
 		account.AccountType = domain.AccountType(accountType)
 		account.Status = domain.AccountStatus(status)
 		account.AvailableBalance.Amount = avail
+		account.AvailableBalance.Currency = currency
 		account.CurrentBalance.Amount = cur
+		account.CurrentBalance.Currency = currency
 		account.ReservedBalance.Amount = res
-		a := account
-		accounts = append(accounts, &a)
+		account.ReservedBalance.Currency = currency
+		accounts = append(accounts, account)
 	}
 
 	if err := iter.Close(); err != nil {
@@ -130,6 +147,6 @@ func (r *cassandraAccountRepository) Update(ctx context.Context, account *domain
 		account.ReservedBalance.Amount,
 		string(account.Status),
 		account.UpdatedAt,
-		account.AccountID,
+		gocql.UUID(account.AccountID),
 	).WithContext(ctx).Exec()
 }

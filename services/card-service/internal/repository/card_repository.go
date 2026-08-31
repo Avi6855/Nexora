@@ -30,7 +30,7 @@ func (r *cassandraCardRepository) Create(ctx context.Context, card *domain.Card)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	if err := r.session.Query(query,
-		card.CardID, card.UserID, card.AccountID, card.CardNumberLast4,
+		gocql.UUID(card.CardID), gocql.UUID(card.UserID), gocql.UUID(card.AccountID), card.CardNumberLast4,
 		string(card.CardType), string(card.Status), card.SpendingLimit,
 		card.DailyLimit, card.CreatedAt, card.UpdatedAt,
 	).WithContext(ctx).Exec(); err != nil {
@@ -41,7 +41,7 @@ func (r *cassandraCardRepository) Create(ctx context.Context, card *domain.Card)
 		VALUES (?, ?, ?, ?, ?)`
 
 	if err := r.session.Query(indexQuery,
-		card.UserID, card.CardID, string(card.Status),
+		gocql.UUID(card.UserID), gocql.UUID(card.CardID), string(card.Status),
 		string(card.CardType), card.CreatedAt,
 	).WithContext(ctx).Exec(); err != nil {
 		return fmt.Errorf("inserting card index: %w", err)
@@ -52,13 +52,14 @@ func (r *cassandraCardRepository) Create(ctx context.Context, card *domain.Card)
 
 func (r *cassandraCardRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Card, error) {
 	var card domain.Card
+	var cardID, userID, accountID gocql.UUID
 	var cardType, status string
 
 	query := `SELECT card_id, user_id, account_id, card_number_last4, card_type, status, spending_limit, daily_limit, created_at, updated_at
 		FROM cards WHERE card_id = ?`
 
-	err := r.session.Query(query, id).WithContext(ctx).Scan(
-		&card.CardID, &card.UserID, &card.AccountID, &card.CardNumberLast4,
+	err := r.session.Query(query, gocql.UUID(id)).WithContext(ctx).Scan(
+		&cardID, &userID, &accountID, &card.CardNumberLast4,
 		&cardType, &status, &card.SpendingLimit, &card.DailyLimit,
 		&card.CreatedAt, &card.UpdatedAt,
 	)
@@ -70,6 +71,9 @@ func (r *cassandraCardRepository) GetByID(ctx context.Context, id uuid.UUID) (*d
 		return nil, err
 	}
 
+	card.CardID = uuid.UUID(cardID)
+	card.UserID = uuid.UUID(userID)
+	card.AccountID = uuid.UUID(accountID)
 	card.CardType = domain.CardType(cardType)
 	card.Status = domain.CardStatus(status)
 	card.SpendingControls = domain.SpendingControls{
@@ -80,11 +84,11 @@ func (r *cassandraCardRepository) GetByID(ctx context.Context, id uuid.UUID) (*d
 }
 
 func (r *cassandraCardRepository) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*domain.Card, error) {
-	var cards []*domain.Card
+	cards := make([]*domain.Card, 0)
 
 	// Query cards_by_user lookup table to get card_ids, then fetch each card
 	iter := r.session.Query(
-		`SELECT card_id FROM cards_by_user WHERE user_id = ?`, userID,
+		`SELECT card_id FROM cards_by_user WHERE user_id = ?`, gocql.UUID(userID),
 	).WithContext(ctx).Iter()
 	defer iter.Close()
 
@@ -108,14 +112,14 @@ func (r *cassandraCardRepository) Update(ctx context.Context, card *domain.Card)
 	query := `UPDATE cards SET status = ?, spending_limit = ?, daily_limit = ?, updated_at = ? WHERE card_id = ?`
 	if err := r.session.Query(query,
 		string(card.Status), card.SpendingLimit, card.DailyLimit,
-		card.UpdatedAt, card.CardID,
+		card.UpdatedAt, gocql.UUID(card.CardID),
 	).WithContext(ctx).Exec(); err != nil {
 		return fmt.Errorf("updating card: %w", err)
 	}
 
 	indexQuery := `UPDATE cards_by_user SET status = ? WHERE user_id = ? AND card_id = ?`
 	return r.session.Query(indexQuery,
-		string(card.Status), card.UserID, card.CardID,
+		string(card.Status), gocql.UUID(card.UserID), gocql.UUID(card.CardID),
 	).WithContext(ctx).Exec()
 }
 
@@ -125,12 +129,12 @@ func (r *cassandraCardRepository) Delete(ctx context.Context, id uuid.UUID) erro
 		return err
 	}
 
-	if err := r.session.Query(`DELETE FROM cards WHERE card_id = ?`, id).WithContext(ctx).Exec(); err != nil {
+	if err := r.session.Query(`DELETE FROM cards WHERE card_id = ?`, gocql.UUID(id)).WithContext(ctx).Exec(); err != nil {
 		return fmt.Errorf("deleting card: %w", err)
 	}
 
 	if err := r.session.Query(`DELETE FROM cards_by_user WHERE user_id = ? AND card_id = ?`,
-		card.UserID, card.CardID).WithContext(ctx).Exec(); err != nil {
+		gocql.UUID(card.UserID), gocql.UUID(card.CardID)).WithContext(ctx).Exec(); err != nil {
 		return fmt.Errorf("deleting card index: %w", err)
 	}
 

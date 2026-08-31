@@ -60,6 +60,16 @@ func main() {
 
 	ledgerService := service.NewLedgerService(ledgerRepo, producer, logger)
 
+	paymentProcessor := events.NewPaymentEventProcessor(ledgerService, logger)
+	consumerTopics := []string{"nexora.payment.confirmed", "nexora.payment.settled"}
+	consumer, err := events.NewKafkaConsumer(cfg.Kafka.Brokers, cfg.Kafka.GroupID+"-ledger", consumerTopics, paymentProcessor.HandlePaymentEvent, logger)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to create Kafka consumer, continuing without event consumption")
+	} else {
+		consumer.Start(context.Background())
+		logger.Info().Strs("topics", consumerTopics).Msg("Kafka payment consumer started")
+	}
+
 	handlers := transport.NewHandlers(ledgerService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
@@ -102,6 +112,11 @@ func main() {
 
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error().Err(err).Msg("HTTP server shutdown error")
+	}
+	if consumer != nil {
+		if err := consumer.Close(); err != nil {
+			logger.Error().Err(err).Msg("Kafka consumer shutdown error")
+		}
 	}
 	if err := healthServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error().Err(err).Msg("health server shutdown error")

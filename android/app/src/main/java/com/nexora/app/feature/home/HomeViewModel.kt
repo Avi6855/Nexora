@@ -44,9 +44,8 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = HomeUiState.Loading
             try {
-                val accountsResponse = accountApi.getAccounts()
-                if (accountsResponse.isSuccess && !accountsResponse.data.isNullOrEmpty()) {
-                    val accounts = accountsResponse.data
+                val accounts = accountApi.getAccounts()
+                if (accounts.isNotEmpty()) {
                     val totalBalance = accounts.sumOf { it.balance }
                     val availableBalance = accounts.sumOf { it.availableBalance }
                     val pendingBalance = accounts.sumOf { it.pendingBalance }
@@ -54,9 +53,11 @@ class HomeViewModel @Inject constructor(
 
                     val transactions = mutableListOf<Transaction>()
                     for (account in accounts) {
-                        val txResponse = transferApi.getTransactions(account.id, limit = 5)
-                        if (txResponse.isSuccess && txResponse.data != null) {
-                            transactions.addAll(txResponse.data)
+                        try {
+                            val txList = transferApi.getTransactions(account.id, limit = 5)
+                            transactions.addAll(txList)
+                        } catch (_: Exception) {
+                            // ignore transfer failures per-account
                         }
                     }
                     val recentTransactions = transactions
@@ -71,13 +72,12 @@ class HomeViewModel @Inject constructor(
                         reservedBalance = reservedBalance,
                         recentTransactions = recentTransactions
                     )
-                } else if (accountsResponse.data.isNullOrEmpty()) {
-                    _uiState.value = HomeUiState.Empty
                 } else {
-                    _uiState.value = HomeUiState.Error(accountsResponse.error ?: "Failed to load data")
+                    _uiState.value = HomeUiState.Empty
                 }
             } catch (e: Exception) {
-                _uiState.value = HomeUiState.Error(e.message ?: "Network error occurred")
+                val msg = e.message ?: "Network error occurred"
+                _uiState.value = HomeUiState.Error(msg)
             }
         }
     }

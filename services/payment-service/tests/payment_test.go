@@ -2,6 +2,8 @@ package tests
 
 import (
 	"context"
+	"encoding/json"
+	"sync"
 	"testing"
 	"time"
 
@@ -60,7 +62,77 @@ func (r *InMemoryPaymentRepository) Update(ctx context.Context, payment *domain.
 	return nil
 }
 
-func setupTestService(pvd provider.Behavior) (*service.PaymentService, *InMemoryPaymentRepository, *events.KafkaEventPublisher) {
+type InMemoryEventPublisher struct {
+	mu     sync.Mutex
+	events []*events.PaymentEventEnvelope
+}
+
+func NewInMemoryEventPublisher() *InMemoryEventPublisher {
+	return &InMemoryEventPublisher{}
+}
+
+func (p *InMemoryEventPublisher) PublishPaymentEvent(ctx context.Context, eventType events.EventType, payment interface{}, correlationID string) error {
+	payload, _ := json.Marshal(payment)
+	aggregateID := extractAggregateID(payment)
+
+	event := &events.PaymentEventEnvelope{
+		EventID:       uuid.New().String(),
+		EventType:     eventType,
+		AggregateID:   aggregateID,
+		CorrelationID: correlationID,
+		CausationID:   uuid.New().String(),
+		Producer:      "test-service",
+		Timestamp:     time.Now().UTC(),
+		Payload:       payload,
+		EventVersion:  1,
+	}
+
+	p.mu.Lock()
+	p.events = append(p.events, event)
+	p.mu.Unlock()
+	return nil
+}
+
+func (p *InMemoryEventPublisher) Close() error {
+	return nil
+}
+
+func (p *InMemoryEventPublisher) GetPublishedEvents() []*events.PaymentEventEnvelope {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	result := make([]*events.PaymentEventEnvelope, len(p.events))
+	copy(result, p.events)
+	return result
+}
+
+func extractAggregateID(payment interface{}) string {
+	type aggregateIDProvider interface {
+		GetAggregateID() string
+	}
+	if provider, ok := payment.(aggregateIDProvider); ok {
+		return provider.GetAggregateID()
+	}
+	type paymentIDProvider interface {
+		GetPaymentID() string
+	}
+	if provider, ok := payment.(paymentIDProvider); ok {
+		return provider.GetPaymentID()
+	}
+	type paymentID struct {
+		PaymentID string `json:"payment_id"`
+	}
+	var p paymentID
+	data, err := json.Marshal(payment)
+	if err != nil {
+		return ""
+	}
+	if err := json.Unmarshal(data, &p); err != nil {
+		return ""
+	}
+	return p.PaymentID
+}
+
+func setupTestService(pvd provider.Behavior) (*service.PaymentService, *InMemoryPaymentRepository, *InMemoryEventPublisher) {
 	repo := NewInMemoryPaymentRepository()
 	logger := zerolog.Nop()
 	mockProvider := provider.NewMockProvider(provider.MockProviderConfig{
@@ -68,12 +140,7 @@ func setupTestService(pvd provider.Behavior) (*service.PaymentService, *InMemory
 		DefaultBehavior: pvd,
 		Delay:           10 * time.Millisecond,
 	})
-	eventPublisher := events.NewKafkaEventPublisher(events.KafkaPublisherConfig{
-		ProducerID:  "test-service",
-		Brokers:     []string{"localhost:9092"},
-		TopicPrefix: "test",
-		Logger:      logger,
-	})
+	eventPublisher := NewInMemoryEventPublisher()
 	paymentService := service.NewPaymentService(repo, mockProvider, eventPublisher, logger)
 	return paymentService, repo, eventPublisher
 }
@@ -329,7 +396,7 @@ func TestCancelAuthorizedPayment(t *testing.T) {
 }
 
 func TestCannotCancelProcessingPayment(t *testing.T) {
-	paymentService, repo := setupTestService(provider.BehaviorTimeout)
+	paymentService, repo, _ := setupTestService(provider.BehaviorTimeout)
 	ctx := context.Background()
 
 	createReq := &domain.CreatePaymentRequest{

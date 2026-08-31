@@ -3,6 +3,7 @@ module github.com/nexora/nexora/services/payment-service
 go 1.24
 
 require (
+	github.com/IBM/sarama v1.43.0
 	github.com/gocql/gocql v1.6.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1

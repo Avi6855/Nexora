@@ -36,12 +36,8 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = ProfileUiState.Loading
             try {
-                val response = userApi.getCurrentUser()
-                if (response.isSuccess && response.data != null) {
-                    _uiState.value = ProfileUiState.Success(response.data)
-                } else {
-                    _uiState.value = ProfileUiState.Error(response.error ?: "Failed to load profile")
-                }
+                val user = userApi.getCurrentUser()
+                _uiState.value = ProfileUiState.Success(user)
             } catch (e: Exception) {
                 _uiState.value = ProfileUiState.Error(e.message ?: "Network error occurred")
             }

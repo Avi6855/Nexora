@@ -36,13 +36,11 @@ class PotsViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = PotsUiState.Loading
             try {
-                val response = potApi.getPots()
-                if (response.isSuccess && !response.data.isNullOrEmpty()) {
-                    _uiState.value = PotsUiState.Success(response.data)
-                } else if (response.data.isNullOrEmpty()) {
-                    _uiState.value = PotsUiState.Empty
+                val pots = potApi.getPots()
+                if (pots.isNotEmpty()) {
+                    _uiState.value = PotsUiState.Success(pots)
                 } else {
-                    _uiState.value = PotsUiState.Error(response.error ?: "Failed to load pots")
+                    _uiState.value = PotsUiState.Empty
                 }
             } catch (e: Exception) {
                 _uiState.value = PotsUiState.Error(e.message ?: "Network error occurred")

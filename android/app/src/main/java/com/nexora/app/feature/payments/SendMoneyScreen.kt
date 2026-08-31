@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -33,7 +34,7 @@ import com.nexora.app.core.design.theme.NexoraPrimary
 fun SendMoneyScreen(
     accountId: String,
     onNavigateBack: () -> Unit,
-    onNavigateToReview: () -> Unit,
+    onNavigateToProcessing: (String) -> Unit,
     viewModel: SendMoneyViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -42,6 +43,13 @@ fun SendMoneyScreen(
     val accountNumber by viewModel.accountNumber.collectAsState()
     val amount by viewModel.amount.collectAsState()
     val reference by viewModel.reference.collectAsState()
+
+    LaunchedEffect(uiState) {
+        if (uiState is SendMoneyUiState.Success) {
+            val paymentId = (uiState as SendMoneyUiState.Success).payment.id
+            onNavigateToProcessing(paymentId)
+        }
+    }
 
     Column(
         modifier = Modifier
