@@ -46,12 +46,12 @@ func NewUser(email, phone, passwordHash, firstName, lastName string) *User {
 }
 
 type RegisterRequest struct {
-	DeviceID  string `json:"deviceId"`
+	DeviceID  string `json:"device_id"`
 	Email     string `json:"email"`
-	Phone     string `json:"phoneNumber"`
+	Phone     string `json:"phone_number"`
 	Password  string `json:"password"`
-	FirstName string `json:"firstName"`
-	LastName  string `json:"lastName"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
 }
 
 type LoginRequest struct {
@@ -72,6 +72,7 @@ type RefreshRequest struct {
 
 type LogoutRequest struct {
 	RefreshToken string `json:"refresh_token"`
+	DeviceID     string `json:"device_id"`
 }
 
 type DeviceRequest struct {

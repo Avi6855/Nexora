@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "monzobank-services"
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - account-service:8083
+          - ledger-service:8084
+          - payment-service:8085
+          - card-service:8087
+          - fraud-service:8089
+          - notification-service:8090
+        labels:
+          env: "demo"

@@ -57,10 +57,20 @@ func main() {
 	}
 
 	policyService := service.NewPolicyService(policyRepo, producer, logger)
+	flagRepo := repository.NewCassandraFlagRepository(session)
+	flagService := service.NewFlagService(flagRepo, logger)
 
-	handlers := transport.NewHandlers(policyService, logger)
+	// ── Time-Travel Compliance Engine ──
+	versionRepo := repository.NewCassandraPolicyVersionRepository(session)
+	snapRepo := repository.NewCassandraSnapshotRepository(session)
+	historyRepo := repository.NewCassandraHistoryRepository(session)
+	timeTravelService := service.NewTimeTravelService(policyRepo, versionRepo, snapRepo, historyRepo, policyService, logger)
+
+	handlers := transport.NewHandlers(policyService, flagService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+	timeTravelHandlers := transport.NewTimeTravelHandlers(timeTravelService)
+	timeTravelHandlers.RegisterRoutes(router)
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)

@@ -22,6 +22,8 @@ func NewHandlers(fraudService *service.FraudService, logger zerolog.Logger) *Han
 func (h *Handlers) RegisterRoutes(router *mux.Router) {
 	router.HandleFunc("/v1/fraud/analyze", h.AnalyzePaymentRisk).Methods("POST")
 	router.HandleFunc("/v1/fraud/analyze/full", h.AnalyzePaymentFull).Methods("POST")
+	router.HandleFunc("/v1/fraud/authorization/evaluate", h.EvaluateAuthorization).Methods("POST")
+	router.HandleFunc("/v1/fraud/transfer/evaluate", h.EvaluateTransfer).Methods("POST")
 	router.HandleFunc("/v1/fraud/health", h.Health).Methods("GET")
 }
 
@@ -56,6 +58,42 @@ func (h *Handlers) AnalyzePaymentFull(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, err := h.fraudService.AnalyzePayment(r.Context(), &req)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handlers) EvaluateAuthorization(w http.ResponseWriter, r *http.Request) {
+	var req domain.EvaluateAuthorizationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.AuthorizationID == "" || req.UserID == "" || req.AccountID == "" || req.CardID == "" || req.Amount <= 0 {
+		respondError(w, http.StatusBadRequest, "authorization_id, user_id, account_id, card_id and positive amount are required")
+		return
+	}
+	resp, err := h.fraudService.EvaluateCardAuthorization(r.Context(), &req)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handlers) EvaluateTransfer(w http.ResponseWriter, r *http.Request) {
+	var req domain.TransferRiskRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.UserID == "" || req.Amount <= 0 {
+		respondError(w, http.StatusBadRequest, "user_id and positive amount are required")
+		return
+	}
+	resp, err := h.fraudService.EvaluateTransferRisk(r.Context(), &req)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return

@@ -143,3 +143,36 @@ type ErrorResponse struct {
 	Error   string `json:"error"`
 	Message string `json:"message"`
 }
+
+// TransferRiskRequest is the outbound bank-transfer context sent by the
+// payment/transfer services before money leaves the account. Unlike card
+// presentment there is no merchant network: the strongest signals are the
+// user's own history with this counterparty, payment velocity, amount pattern
+// and whether the account is new to this kind of payment.
+type TransferRiskRequest struct {
+	RequestID        string `json:"request_id"`
+	UserID           string `json:"user_id"`
+	AccountID        string `json:"account_id"`
+	Amount           int64  `json:"amount"`
+	Currency         string `json:"currency"`
+	CounterpartyID   string `json:"counterparty_id,omitempty"`
+	CounterpartyName string `json:"counterparty_name,omitempty"`
+	Reference        string `json:"reference,omitempty"`
+	DeviceID         string `json:"device_id,omitempty"`
+	IPAddress        string `json:"ip_address,omitempty"`
+}
+
+// TransferRiskResponse is the scam-intelligence decision for an outbound
+// transfer. ACTION flow mirrors Monzo's approach: ALLOW passes silently,
+// WARN surfaces an in-app warning the user must confirm, STEP_UP demands
+// extra verification, BLOCK refuses the payment.
+type TransferRiskResponse struct {
+	RequestID  string        `json:"request_id"`
+	Action     RiskAction    `json:"action"`
+	RiskScore  float64       `json:"risk_score"`
+	RiskLevel  RiskLevel     `json:"risk_level"`
+	Reasons    []string      `json:"reasons"`
+	Signals    []FraudSignal `json:"signals"`
+	Advice     string        `json:"advice,omitempty"`
+	EvaluatedAt time.Time    `json:"evaluated_at"`
+}

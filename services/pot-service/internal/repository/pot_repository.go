@@ -26,12 +26,12 @@ func NewCassandraPotRepository(session *gocql.Session) PotRepository {
 }
 
 func (r *cassandraPotRepository) Create(ctx context.Context, pot *domain.Pot) error {
-	query := `INSERT INTO pots (pot_id, user_id, name, target_amount, current_amount, currency, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO pots (pot_id, user_id, name, target_amount, current_amount, currency, status, round_up_enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	if err := r.session.Query(query,
 		gocql.UUID(pot.PotID), gocql.UUID(pot.UserID), pot.Name, pot.TargetAmount, pot.CurrentAmount,
-		pot.Currency, string(pot.Status), pot.CreatedAt, pot.UpdatedAt,
+		pot.Currency, string(pot.Status), pot.RoundUpEnabled, pot.CreatedAt, pot.UpdatedAt,
 	).WithContext(ctx).Exec(); err != nil {
 		return fmt.Errorf("inserting pot: %w", err)
 	}
@@ -53,12 +53,12 @@ func (r *cassandraPotRepository) GetByID(ctx context.Context, id uuid.UUID) (*do
 	var potID, userID gocql.UUID
 	var status string
 
-	query := `SELECT pot_id, user_id, name, target_amount, current_amount, currency, status, created_at, updated_at
+	query := `SELECT pot_id, user_id, name, target_amount, current_amount, currency, status, round_up_enabled, created_at, updated_at
 		FROM pots WHERE pot_id = ?`
 
 	err := r.session.Query(query, gocql.UUID(id)).WithContext(ctx).Scan(
 		&potID, &userID, &pot.Name, &pot.TargetAmount, &pot.CurrentAmount,
-		&pot.Currency, &status, &pot.CreatedAt, &pot.UpdatedAt,
+		&pot.Currency, &status, &pot.RoundUpEnabled, &pot.CreatedAt, &pot.UpdatedAt,
 	)
 
 	if err == gocql.ErrNotFound {
@@ -99,9 +99,9 @@ func (r *cassandraPotRepository) GetByUserID(ctx context.Context, userID uuid.UU
 }
 
 func (r *cassandraPotRepository) Update(ctx context.Context, pot *domain.Pot) error {
-	query := `UPDATE pots SET name = ?, current_amount = ?, status = ?, updated_at = ? WHERE pot_id = ?`
+	query := `UPDATE pots SET name = ?, current_amount = ?, status = ?, round_up_enabled = ?, updated_at = ? WHERE pot_id = ?`
 	if err := r.session.Query(query,
-		pot.Name, pot.CurrentAmount, string(pot.Status), pot.UpdatedAt, gocql.UUID(pot.PotID),
+		pot.Name, pot.CurrentAmount, string(pot.Status), pot.RoundUpEnabled, pot.UpdatedAt, gocql.UUID(pot.PotID),
 	).WithContext(ctx).Exec(); err != nil {
 		return fmt.Errorf("updating pot: %w", err)
 	}

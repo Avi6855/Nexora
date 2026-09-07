@@ -20,7 +20,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MonitorHeart
+import androidx.compose.material.icons.filled.ReportProblem
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -51,6 +54,9 @@ import com.nexora.app.core.model.User
 @Composable
 fun ProfileScreen(
     onNavigateToSecurity: () -> Unit,
+    onNavigateToDelegatedAccess: () -> Unit,
+    onNavigateToDisputes: () -> Unit,
+    onNavigateToSystemStatus: () -> Unit,
     onNavigateToLogin: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
@@ -92,6 +98,9 @@ fun ProfileScreen(
                 ProfileContent(
                     user = state.user,
                     onNavigateToSecurity = onNavigateToSecurity,
+                    onNavigateToDelegatedAccess = onNavigateToDelegatedAccess,
+                    onNavigateToDisputes = onNavigateToDisputes,
+                    onNavigateToSystemStatus = onNavigateToSystemStatus,
                     onLogout = { showLogoutDialog.value = true }
                 )
             }
@@ -115,6 +124,9 @@ fun ProfileScreen(
 private fun ProfileContent(
     user: User,
     onNavigateToSecurity: () -> Unit,
+    onNavigateToDelegatedAccess: () -> Unit,
+    onNavigateToDisputes: () -> Unit,
+    onNavigateToSystemStatus: () -> Unit,
     onLogout: () -> Unit
 ) {
     Column(
@@ -165,6 +177,24 @@ private fun ProfileContent(
             icon = Icons.Filled.Lock,
             title = "Security",
             onClick = onNavigateToSecurity
+        )
+
+        ProfileMenuItem(
+            icon = Icons.Filled.Group,
+            title = "Delegated access",
+            onClick = onNavigateToDelegatedAccess
+        )
+
+        ProfileMenuItem(
+            icon = Icons.Filled.ReportProblem,
+            title = "Disputes",
+            onClick = onNavigateToDisputes
+        )
+
+        ProfileMenuItem(
+            icon = Icons.Filled.MonitorHeart,
+            title = "System status",
+            onClick = onNavigateToSystemStatus
         )
 
         ProfileMenuItem(

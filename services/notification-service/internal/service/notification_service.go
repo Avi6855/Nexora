@@ -10,17 +10,19 @@ import (
 	"github.com/google/uuid"
 	"github.com/nexora/nexora/services/notification-service/internal/domain"
 	"github.com/nexora/nexora/services/notification-service/internal/events"
+	"github.com/nexora/nexora/services/notification-service/internal/realtime"
 	"github.com/nexora/nexora/services/notification-service/internal/repository"
 )
 
 type NotificationService struct {
 	notifRepo repository.NotificationRepository
 	producer  *events.KafkaProducer
+	hub       *realtime.Hub
 	logger    zerolog.Logger
 }
 
-func NewNotificationService(notifRepo repository.NotificationRepository, producer *events.KafkaProducer, logger zerolog.Logger) *NotificationService {
-	return &NotificationService{notifRepo: notifRepo, producer: producer, logger: logger}
+func NewNotificationService(notifRepo repository.NotificationRepository, producer *events.KafkaProducer, hub *realtime.Hub, logger zerolog.Logger) *NotificationService {
+	return &NotificationService{notifRepo: notifRepo, producer: producer, hub: hub, logger: logger}
 }
 
 func (s *NotificationService) SendNotification(ctx context.Context, req *domain.SendNotificationRequest) (*domain.Notification, error) {
@@ -33,13 +35,10 @@ func (s *NotificationService) SendNotification(ctx context.Context, req *domain.
 	if req.Metadata != nil {
 		notif.Metadata = req.Metadata
 	}
-	if err := s.notifRepo.Create(ctx, notif); err != nil {
-		return nil, fmt.Errorf("storing notification: %w", err)
+
+	if err := s.persistAndPush(ctx, notif); err != nil {
+		return nil, err
 	}
-	now := time.Now().UTC()
-	notif.Status = domain.NotificationStatusSent
-	notif.SentAt = &now
-	s.notifRepo.MarkAsSent(ctx, notif.NotificationID)
 
 	if s.producer != nil {
 		_ = s.producer.Publish(ctx, "notification.sent", notif)
@@ -48,8 +47,56 @@ func (s *NotificationService) SendNotification(ctx context.Context, req *domain.
 	return notif, nil
 }
 
+// persistAndPush is the single write path for every notification: durable row
+// in Cassandra first, then real-time fan-out to the user's SSE connections.
+func (s *NotificationService) persistAndPush(ctx context.Context, notif *domain.Notification) error {
+	if err := s.notifRepo.Create(ctx, notif); err != nil {
+		return fmt.Errorf("storing notification: %w", err)
+	}
+	now := time.Now().UTC()
+	notif.Status = domain.NotificationStatusSent
+	notif.SentAt = &now
+	if err := s.notifRepo.MarkAsSent(ctx, notif); err != nil {
+		s.logger.Warn().Err(err).Str("notification_id", notif.NotificationID.String()).Msg("failed to mark notification as sent")
+	}
+
+	if s.hub != nil {
+		payload, err := json.Marshal(map[string]interface{}{
+			"kind":         "feed_item",
+			"notification": notif,
+		})
+		if err == nil {
+			s.hub.Publish(notif.UserID, payload)
+		}
+	}
+	return nil
+}
+
+// GetFeed returns the mobile home-screen feed: real notification rows (each
+// originated from a real event and was persisted) enriched from metadata.
+func (s *NotificationService) GetFeed(ctx context.Context, userID uuid.UUID, limit int) ([]*domain.FeedItem, error) {
+	notifs, err := s.notifRepo.GetByUserID(ctx, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]*domain.FeedItem, 0, len(notifs))
+	for _, n := range notifs {
+		items = append(items, domain.FeedItemFromNotification(n))
+	}
+	return items, nil
+}
+
 func (s *NotificationService) GetNotification(ctx context.Context, id uuid.UUID) (*domain.Notification, error) {
 	return s.notifRepo.GetByID(ctx, id)
+}
+
+// Subscribe exposes the realtime hub for SSE connections.
+func (s *NotificationService) Subscribe(userID uuid.UUID) (<-chan []byte, func()) {
+	if s.hub == nil {
+		ch := make(chan []byte)
+		return ch, func() {}
+	}
+	return s.hub.Subscribe(userID)
 }
 
 func (s *NotificationService) GetNotificationsByUser(ctx context.Context, userID uuid.UUID, limit int) ([]*domain.Notification, error) {
@@ -60,7 +107,14 @@ func (s *NotificationService) GetNotificationsByUser(ctx context.Context, userID
 }
 
 func (s *NotificationService) MarkAsRead(ctx context.Context, id uuid.UUID) error {
-	return s.notifRepo.MarkAsRead(ctx, id)
+	n, err := s.notifRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	n.Status = domain.NotificationStatusRead
+	n.ReadAt = &now
+	return s.notifRepo.MarkAsRead(ctx, n)
 }
 
 func (s *NotificationService) ConsumePaymentEvent(ctx context.Context, event *domain.NotificationEvent) error {
@@ -101,17 +155,7 @@ func (s *NotificationService) ConsumePaymentEvent(ctx context.Context, event *do
 
 	metadata, _ := json.Marshal(payload)
 	notif := domain.NewNotificationWithMetadata(userID, nType, domain.NotificationChannelPush, title, body, metadata)
-
-	if err := s.notifRepo.Create(ctx, notif); err != nil {
-		return fmt.Errorf("storing payment notification: %w", err)
-	}
-
-	now := time.Now().UTC()
-	notif.Status = domain.NotificationStatusSent
-	notif.SentAt = &now
-	s.notifRepo.MarkAsSent(ctx, notif.NotificationID)
-
-	return nil
+	return s.persistAndPush(ctx, notif)
 }
 
 func (s *NotificationService) ConsumeFraudEvent(ctx context.Context, event *domain.NotificationEvent) error {
@@ -133,16 +177,15 @@ func (s *NotificationService) ConsumeFraudEvent(ctx context.Context, event *doma
 
 	metadata, _ := json.Marshal(payload)
 	notif := domain.NewNotificationWithMetadata(userID, nType, domain.NotificationChannelPush, title, body, metadata)
-
-	if err := s.notifRepo.Create(ctx, notif); err != nil {
-		return fmt.Errorf("storing fraud notification: %w", err)
+	if err := s.persistAndPush(ctx, notif); err != nil {
+		return err
 	}
 
-	s.notifRepo.MarkAsSent(ctx, notif.NotificationID)
-
+	// Also fan out an EMAIL channel copy for the webhook-style API.
 	emailNotif := domain.NewNotificationWithMetadata(userID, nType, domain.NotificationChannelEmail, title, body, metadata)
-	s.notifRepo.Create(ctx, emailNotif)
-	s.notifRepo.MarkAsSent(ctx, emailNotif.NotificationID)
+	if err := s.persistAndPush(ctx, emailNotif); err != nil {
+		s.logger.Warn().Err(err).Msg("failed to store email notification")
+	}
 
 	return nil
 }
@@ -180,17 +223,7 @@ func (s *NotificationService) ConsumeSecurityEvent(ctx context.Context, event *d
 
 	metadata, _ := json.Marshal(payload)
 	notif := domain.NewNotificationWithMetadata(userID, nType, domain.NotificationChannelPush, title, body, metadata)
-
-	if err := s.notifRepo.Create(ctx, notif); err != nil {
-		return fmt.Errorf("storing security notification: %w", err)
-	}
-
-	now := time.Now().UTC()
-	notif.Status = domain.NotificationStatusSent
-	notif.SentAt = &now
-	s.notifRepo.MarkAsSent(ctx, notif.NotificationID)
-
-	return nil
+	return s.persistAndPush(ctx, notif)
 }
 
 func toPence(v interface{}) float64 {

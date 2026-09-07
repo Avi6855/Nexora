@@ -13,13 +13,18 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
-	"github.com/nexora/nexora/shared/config"
-	"github.com/nexora/nexora/shared/health"
+	"github.com/nexora/nexora/services/payment-service/internal/clients"
 	"github.com/nexora/nexora/services/payment-service/internal/events"
 	"github.com/nexora/nexora/services/payment-service/internal/provider"
 	"github.com/nexora/nexora/services/payment-service/internal/repository"
 	"github.com/nexora/nexora/services/payment-service/internal/service"
 	"github.com/nexora/nexora/services/payment-service/internal/transport"
+	"github.com/nexora/nexora/shared/auth"
+	"github.com/nexora/nexora/shared/config"
+	"github.com/nexora/nexora/shared/health"
+	"github.com/nexora/nexora/shared/outbox"
+	"github.com/nexora/nexora/shared/shedding"
+	"github.com/nexora/nexora/shared/telemetry"
 )
 
 func main() {
@@ -55,20 +60,65 @@ func main() {
 		Delay:           500 * time.Millisecond,
 	})
 
-	eventPublisher := events.NewKafkaEventPublisher(events.KafkaPublisherConfig{
-		ProducerID:  "payment-service",
-		Brokers:     cfg.Kafka.Brokers,
-		TopicPrefix: cfg.Kafka.TopicPrefix,
-		Logger:      logger,
-		UseOutbox:   true,
+	// ── Transactional outbox (ADR-005) ──────────────────────────────────
+	// Every payment state transition is written to the outbox atomically with
+	// the payments row (single logged batch); the relay below drains the
+	// outbox to Kafka with retry + DLQ. No event can be lost because Kafka is
+	// unavailable, and no event can be published for a transition that never
+	// happened.
+	outboxStore := outbox.NewCassandraStore(session)
+
+	kafkaPublisher, err := outbox.NewKafkaPublisher(outbox.KafkaPublisherConfig{
+		Brokers: cfg.Kafka.Brokers,
+		Logger:  logger,
 	})
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to create outbox kafka publisher")
+	}
+
+	relay := outbox.NewRelay(outboxStore, kafkaPublisher, logger, outbox.DefaultRelayConfig())
+	relay.Start(context.Background())
+
+	eventPublisher := events.NewOutboxEventPublisher(outboxStore, "payment-service", cfg.Kafka.TopicPrefix)
 
 	paymentRepo := repository.NewCassandraPaymentRepository(session)
 	paymentService := service.NewPaymentService(paymentRepo, mockProvider, eventPublisher, logger)
 
+	// ── Security slice: real-time scam intelligence + lockdown ──────────
+	// Outbound payments are evaluated by the fraud service over the user's
+	// real decision history before any state is persisted, and refused when
+	// the source account is in emergency lockdown. Both clients are nil in
+	// environments without the sibling services (tests, local runs).
+	if fraudClient := clients.NewFraudClient(); fraudClient != nil {
+		paymentService.SetFraudClient(fraudClient)
+		logger.Info().Msg("scam-intelligence gate enabled (fraud-service)")
+	}
+	paymentService.SetAccountClient(clients.NewAccountClient())
+
 	handlers := transport.NewHandlers(paymentService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+
+	// Adaptive load shedding: poll the control plane's dependency graph; when
+	// a critical dependency degrades, non-critical traffic is shed first so
+	// payments stay alive (shared/shedding).
+	controlURL := os.Getenv("CONTROL_PLANE_SERVICE_URL")
+	if controlURL == "" {
+		controlURL = "http://localhost:8096"
+	}
+	shedder := shedding.New("payment-service", controlURL, nil)
+	shedCtx, cancelShed := context.WithCancel(context.Background())
+	defer cancelShed()
+	shedder.Start(shedCtx)
+	router.Use(shedder.Handler)
+
+	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"), "/v1/health", "/metrics", "/v1/webhooks").Middleware)
+
+	// Prometheus /metrics (shared/telemetry). Route-specific request
+	// counters + latency histograms are exposed for Prometheus/Grafana.
+	metricsRegistry := telemetry.NewRegistry()
+	router.HandleFunc("/metrics", telemetry.MetricsHandler(metricsRegistry)).Methods("GET")
+	router.Use(telemetry.HTTPMetrics(metricsRegistry, "payment-service"))
 	router.HandleFunc("/health", handlers.HealthCheck).Methods("GET")
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
@@ -112,6 +162,10 @@ func main() {
 	}
 	if err := healthServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error().Err(err).Msg("health server shutdown error")
+	}
+	relay.Stop()
+	if err := kafkaPublisher.Close(); err != nil {
+		logger.Error().Err(err).Msg("outbox kafka publisher shutdown error")
 	}
 	if err := eventPublisher.Close(); err != nil {
 		logger.Error().Err(err).Msg("event publisher shutdown error")

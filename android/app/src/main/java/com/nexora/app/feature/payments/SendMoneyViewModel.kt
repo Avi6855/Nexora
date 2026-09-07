@@ -17,6 +17,9 @@ sealed class SendMoneyUiState {
     data object Loading : SendMoneyUiState()
     data class Success(val payment: Payment) : SendMoneyUiState()
     data class Error(val message: String) : SendMoneyUiState()
+
+    /** The scam-intelligence engine refused this payment (HTTP 403). */
+    data class BlockedByRisk(val message: String) : SendMoneyUiState()
 }
 
 @HiltViewModel
@@ -79,6 +82,10 @@ class SendMoneyViewModel @Inject constructor(
                 )
                 if (response.isSuccess && response.data != null) {
                     _uiState.value = SendMoneyUiState.Success(response.data)
+                } else if (response.error == "blocked_by_risk_engine") {
+                    _uiState.value = SendMoneyUiState.BlockedByRisk(
+                        response.message ?: "We stopped this payment as a precaution"
+                    )
                 } else {
                     _uiState.value = SendMoneyUiState.Error(response.error ?: "Payment failed")
                 }

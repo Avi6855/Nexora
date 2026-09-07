@@ -41,6 +41,12 @@ func NewTokenManager(secret string, accessTTL, refreshTTL time.Duration) *TokenM
 	}
 }
 
+// AccessTokenTTL exposes the configured access-token lifetime (used by
+// services to report token expiry without parsing the token).
+func (tm *TokenManager) AccessTokenTTL() time.Duration {
+	return tm.accessTTL
+}
+
 func (tm *TokenManager) GenerateAccessToken(userID, email string, roles []string, deviceID string) (string, error) {
 	claims := &Claims{
 		UserID:   userID,
@@ -53,6 +59,7 @@ func (tm *TokenManager) GenerateAccessToken(userID, email string, roles []string
 			ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(tm.accessTTL)),
 			Issuer:    "nexora",
 			Subject:   userID,
+			Audience:  jwt.ClaimStrings{"nexora-api"},
 		},
 	}
 
@@ -70,6 +77,7 @@ func (tm *TokenManager) GenerateRefreshToken(userID, deviceID string) (string, e
 			ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(tm.refreshTTL)),
 			Issuer:    "nexora",
 			Subject:   userID,
+			Audience:  jwt.ClaimStrings{"nexora-api"},
 		},
 	}
 
@@ -105,7 +113,7 @@ func (tm *TokenManager) ValidateToken(tokenString string) (*Claims, error) {
 			return nil, ErrInvalidToken
 		}
 		return tm.secret, nil
-	})
+	}, jwt.WithIssuer("nexora"), jwt.WithAudience("nexora-api"))
 
 	if err != nil {
 		return nil, ErrInvalidToken

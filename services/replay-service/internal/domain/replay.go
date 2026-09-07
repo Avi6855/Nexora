@@ -73,6 +73,41 @@ type ReplayPaymentRequest struct {
 	PaymentID string `json:"payment_id"`
 }
 
+// TimeTravelRequest asks "what was this account's state at instant T?". The
+// reconstruction runs over the real append-only ledger (balance_after per
+// entry), so the answer is authoritative, not simulated.
+type TimeTravelRequest struct {
+	AccountID string `json:"account_id"`
+	// AtTime is RFC3339; empty or zero means "now" (equivalent to the live
+	// balance, useful as a self-check).
+	AtTime string `json:"at_time"`
+}
+
+type TimeTravelStep struct {
+	EntryID      string    `json:"entry_id"`
+	EntryType    string    `json:"entry_type"`
+	Description  string    `json:"description"`
+	Amount       int64     `json:"amount"`
+	Direction    string    `json:"direction"`
+	BalanceAfter int64     `json:"balance_after"`
+	BookedAt     time.Time `json:"booked_at"`
+}
+
+type TimeTravelResult struct {
+	AccountID   uuid.UUID `json:"account_id"`
+	SnapshotAt  time.Time `json:"snapshot_at"`
+	Balance     int64     `json:"balance"`
+	EntriesSeen int       `json:"entries_seen"`
+	// LedgerIsLive is true when no entries were booked after the snapshot, so
+	// the reconstructed balance equals the current live balance.
+	LedgerIsLive bool `json:"ledger_is_live"`
+	// Divergence is set when the backwards read (stored balance_after) and the
+	// forward replay (signed sum) disagree — the time-travel debugging signal.
+	Divergence *ReplayDifference `json:"divergence,omitempty"`
+	Steps      []TimeTravelStep  `json:"steps"`
+	ReplayedAt time.Time         `json:"replayed_at"`
+}
+
 type CreateReplayRequest struct {
 	StartTime  string   `json:"start_time"`
 	EndTime    string   `json:"end_time"`

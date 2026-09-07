@@ -2,14 +2,15 @@ package transport
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
-	"strings"
 
-	"github.com/gorilla/mux"
-	"github.com/rs/zerolog"
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	"github.com/nexora/nexora/services/identity-service/internal/domain"
 	"github.com/nexora/nexora/services/identity-service/internal/service"
+	domainerrors "github.com/nexora/nexora/shared/errors"
+	"github.com/rs/zerolog"
 )
 
 type Handlers struct {
@@ -43,6 +44,28 @@ func respondError(w http.ResponseWriter, status int, message string) {
 	respondJSON(w, status, map[string]string{"error": message})
 }
 
+// clientError writes a generic message at the mapped status so responses never
+// disclose whether an account exists or why credentials were rejected.
+func clientError(w http.ResponseWriter, err error) {
+	var de *domainerrors.DomainError
+	status := http.StatusInternalServerError
+	if errors.As(err, &de) {
+		status = de.HTTPStatus
+	}
+	if status >= 500 {
+		respondError(w, status, "something went wrong, please try again")
+		return
+	}
+	switch {
+	case errors.Is(err, domainerrors.ErrRateLimited):
+		respondError(w, http.StatusTooManyRequests, "too many attempts, please try again later")
+	case errors.Is(err, domainerrors.ErrUnauthorized):
+		respondError(w, http.StatusUnauthorized, "invalid credentials")
+	default:
+		respondError(w, status, "request could not be completed")
+	}
+}
+
 func (h *Handlers) Register(w http.ResponseWriter, r *http.Request) {
 	var req domain.RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -57,7 +80,9 @@ func (h *Handlers) Register(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.authService.Register(r.Context(), &req)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		// Duplicate addresses and validation failures return 400/409 with a
+		// generic body — never "email already registered".
+		clientError(w, err)
 		return
 	}
 
@@ -76,9 +101,10 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokens, err := h.authService.Login(r.Context(), &req)
+	ctx := service.WithRemoteIP(r.Context(), service.ClientIP(r.RemoteAddr))
+	tokens, err := h.authService.Login(ctx, &req)
 	if err != nil {
-		respondError(w, http.StatusUnauthorized, err.Error())
+		clientError(w, err)
 		return
 	}
 
@@ -99,19 +125,20 @@ func (h *Handlers) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 
 	userIDStr := r.Header.Get("X-User-ID")
 	if userIDStr == "" {
-		respondError(w, http.StatusBadRequest, "X-User-ID header is required")
+		respondError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, "invalid user ID")
+		respondError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
-	tokens, err := h.authService.VerifyOTP(r.Context(), userID, req.Code, domain.OTPPurpose(req.Purpose), req.DeviceID)
+	ctx := service.WithRemoteIP(r.Context(), service.ClientIP(r.RemoteAddr))
+	tokens, err := h.authService.VerifyOTP(ctx, userID, req.Code, domain.OTPPurpose(req.Purpose), req.DeviceID)
 	if err != nil {
-		respondError(w, http.StatusUnauthorized, err.Error())
+		clientError(w, err)
 		return
 	}
 
@@ -126,13 +153,13 @@ func (h *Handlers) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.RefreshToken == "" {
-		respondError(w, http.StatusBadRequest, "refresh token is required")
+		respondError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
 	tokens, err := h.authService.RefreshToken(r.Context(), req.RefreshToken)
 	if err != nil {
-		respondError(w, http.StatusUnauthorized, err.Error())
+		clientError(w, err)
 		return
 	}
 
@@ -148,26 +175,23 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 
 	userIDStr := r.Header.Get("X-User-ID")
 	if userIDStr == "" {
-		respondError(w, http.StatusBadRequest, "X-User-ID header is required")
+		respondError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, "invalid user ID")
+		respondError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
-	deviceID := ""
-	if req.RefreshToken != "" {
-		parts := strings.Split(req.RefreshToken, ".")
-		if len(parts) > 0 {
-			deviceID = parts[0]
-		}
+	if req.RefreshToken == "" && req.DeviceID == "" {
+		respondError(w, http.StatusBadRequest, "refresh_token or device_id is required")
+		return
 	}
 
-	if err := h.authService.Logout(r.Context(), userID, deviceID); err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+	if err := h.authService.Logout(r.Context(), userID, req.RefreshToken, req.DeviceID); err != nil {
+		clientError(w, err)
 		return
 	}
 
@@ -183,19 +207,19 @@ func (h *Handlers) RegisterDevice(w http.ResponseWriter, r *http.Request) {
 
 	userIDStr := r.Header.Get("X-User-ID")
 	if userIDStr == "" {
-		respondError(w, http.StatusBadRequest, "X-User-ID header is required")
+		respondError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, "invalid user ID")
+		respondError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
 	device, err := h.authService.RegisterDevice(r.Context(), userID, &req)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		clientError(w, err)
 		return
 	}
 

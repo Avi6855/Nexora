@@ -12,6 +12,7 @@ import (
 	"github.com/nexora/nexora/services/payment-service/internal/events"
 	"github.com/nexora/nexora/services/payment-service/internal/provider"
 	"github.com/nexora/nexora/services/payment-service/internal/repository"
+	"github.com/nexora/nexora/shared/outbox"
 )
 
 type SagaStep func(ctx context.Context, payment *domain.Payment) error
@@ -19,10 +20,12 @@ type SagaStep func(ctx context.Context, payment *domain.Payment) error
 type CompensationStep func(ctx context.Context, payment *domain.Payment) error
 
 type PaymentSaga struct {
-	paymentRepo   repository.PaymentRepository
-	provider      provider.PaymentProvider
+	paymentRepo    repository.PaymentRepository
+	provider       provider.PaymentProvider
 	eventPublisher events.EventPublisher
-	logger        zerolog.Logger
+	logger         zerolog.Logger
+	producer       string
+	topicPrefix    string
 }
 
 func NewPaymentSaga(
@@ -36,7 +39,47 @@ func NewPaymentSaga(
 		provider:       provider,
 		eventPublisher: eventPublisher,
 		logger:         logger,
+		producer:       "payment-service",
+		topicPrefix:    "nexora",
 	}
+}
+
+// persistTransition persists the payment state transition and its outbox
+// event in ONE atomic operation when the repository supports it (logged
+// Cassandra batch — ADR-005). This eliminates the dual-write problem: the
+// payment can never change state without its event being durably recorded.
+// Repositories without atomic support (e.g. in-memory test doubles) fall back
+// to a sequential update + enqueue.
+func (s *PaymentSaga) persistTransition(ctx context.Context, payment *domain.Payment, eventType events.EventType, payload interface{}, correlationID string) error {
+	if aw, ok := s.paymentRepo.(repository.AtomicEventWriter); ok {
+		ev, err := events.BuildPaymentOutboxEvent(eventType, payload, correlationID, s.producer, s.topicPrefix)
+		if err != nil {
+			return fmt.Errorf("building outbox event: %w", err)
+		}
+		return aw.UpdateWithEvents(ctx, payment, []*outbox.Event{ev})
+	}
+
+	if err := s.paymentRepo.Update(ctx, payment); err != nil {
+		return err
+	}
+	return s.eventPublisher.PublishPaymentEvent(ctx, eventType, payload, correlationID)
+}
+
+// persistCreate atomically persists a new payment together with its first
+// outbox event (payment.created).
+func (s *PaymentSaga) persistCreate(ctx context.Context, payment *domain.Payment, eventType events.EventType, payload interface{}, correlationID string) error {
+	if aw, ok := s.paymentRepo.(repository.AtomicEventWriter); ok {
+		ev, err := events.BuildPaymentOutboxEvent(eventType, payload, correlationID, s.producer, s.topicPrefix)
+		if err != nil {
+			return fmt.Errorf("building outbox event: %w", err)
+		}
+		return aw.CreateWithEvents(ctx, payment, []*outbox.Event{ev})
+	}
+
+	if err := s.paymentRepo.Create(ctx, payment); err != nil {
+		return err
+	}
+	return s.eventPublisher.PublishPaymentEvent(ctx, eventType, payload, correlationID)
 }
 
 func (s *PaymentSaga) ExecuteCreatePayment(ctx context.Context, req *domain.CreatePaymentRequest, correlationID string) (*domain.Payment, error) {
@@ -61,10 +104,17 @@ func (s *PaymentSaga) ExecuteCreatePayment(ctx context.Context, req *domain.Crea
 		return nil, fmt.Errorf("invalid account ID: %w", err)
 	}
 
+	userID := uuidNil()
+	if req.UserID != "" {
+		if parsed, err := uuid.Parse(req.UserID); err == nil {
+			userID = parsed
+		}
+	}
+
 	payment := domain.NewPayment(
 		req.IdempotencyKey,
 		accountID,
-		uuidNil(),
+		userID,
 		req.PaymentType,
 		req.Amount,
 		req.Currency,
@@ -77,14 +127,11 @@ func (s *PaymentSaga) ExecuteCreatePayment(ctx context.Context, req *domain.Crea
 		payment.Metadata = req.Metadata
 	}
 
-	if err := s.paymentRepo.Create(ctx, payment); err != nil {
-		return nil, fmt.Errorf("storing payment: %w", err)
-	}
-
 	eventPayload := events.PaymentEventPayload{
 		PaymentID:        payment.PaymentID.String(),
 		IdempotencyKey:   payment.IdempotencyKey,
 		AccountID:        payment.AccountID.String(),
+		UserID:           payment.UserID.String(),
 		PaymentType:      string(payment.PaymentType),
 		Amount:           payment.Amount,
 		Currency:         payment.Currency,
@@ -95,8 +142,8 @@ func (s *PaymentSaga) ExecuteCreatePayment(ctx context.Context, req *domain.Crea
 		Metadata:         payment.Metadata,
 	}
 
-	if err := s.eventPublisher.PublishPaymentEvent(ctx, events.EventTypePaymentCreated, eventPayload, correlationID); err != nil {
-		s.logger.Error().Err(err).Msg("failed to publish payment.created event")
+	if err := s.persistCreate(ctx, payment, events.EventTypePaymentCreated, eventPayload, correlationID); err != nil {
+		return nil, fmt.Errorf("storing payment with event: %w", err)
 	}
 
 	s.logger.Info().
@@ -130,14 +177,11 @@ func (s *PaymentSaga) ExecuteAuthorizePayment(ctx context.Context, paymentID str
 		return nil, fmt.Errorf("transition failed: %w", err)
 	}
 
-	if err := s.paymentRepo.Update(ctx, payment); err != nil {
-		return nil, fmt.Errorf("updating payment: %w", err)
-	}
-
 	eventPayload := events.PaymentEventPayload{
 		PaymentID:        payment.PaymentID.String(),
 		IdempotencyKey:   payment.IdempotencyKey,
 		AccountID:        payment.AccountID.String(),
+		UserID:           payment.UserID.String(),
 		PaymentType:      string(payment.PaymentType),
 		Amount:           payment.Amount,
 		Currency:         payment.Currency,
@@ -148,8 +192,8 @@ func (s *PaymentSaga) ExecuteAuthorizePayment(ctx context.Context, paymentID str
 		Reference:        payment.Reference,
 	}
 
-	if err := s.eventPublisher.PublishPaymentEvent(ctx, events.EventTypePaymentAuthorized, eventPayload, correlationID); err != nil {
-		s.logger.Error().Err(err).Msg("failed to publish payment.authorized event")
+	if err := s.persistTransition(ctx, payment, events.EventTypePaymentAuthorized, eventPayload, correlationID); err != nil {
+		return nil, fmt.Errorf("persisting authorization: %w", err)
 	}
 
 	s.logger.Info().
@@ -183,14 +227,11 @@ func (s *PaymentSaga) ExecuteProcessPayment(ctx context.Context, paymentID strin
 		return nil, fmt.Errorf("transition failed: %w", err)
 	}
 
-	if err := s.paymentRepo.Update(ctx, payment); err != nil {
-		return nil, fmt.Errorf("updating payment: %w", err)
-	}
-
 	eventPayload := events.PaymentEventPayload{
 		PaymentID:        payment.PaymentID.String(),
 		IdempotencyKey:   payment.IdempotencyKey,
 		AccountID:        payment.AccountID.String(),
+		UserID:           payment.UserID.String(),
 		PaymentType:      string(payment.PaymentType),
 		Amount:           payment.Amount,
 		Currency:         payment.Currency,
@@ -201,8 +242,8 @@ func (s *PaymentSaga) ExecuteProcessPayment(ctx context.Context, paymentID strin
 		Reference:        payment.Reference,
 	}
 
-	if err := s.eventPublisher.PublishPaymentEvent(ctx, events.EventTypePaymentProcessing, eventPayload, correlationID); err != nil {
-		s.logger.Error().Err(err).Msg("failed to publish payment.processing event")
+	if err := s.persistTransition(ctx, payment, events.EventTypePaymentProcessing, eventPayload, correlationID); err != nil {
+		return nil, fmt.Errorf("persisting processing state: %w", err)
 	}
 
 	payReq := &provider.PaymentRequest{
@@ -254,15 +295,11 @@ func (s *PaymentSaga) confirmAndSettle(ctx context.Context, payment *domain.Paym
 		return
 	}
 
-	if err := s.paymentRepo.Update(ctx, payment); err != nil {
-		s.logger.Error().Err(err).Str("payment_id", payment.PaymentID.String()).Msg("failed to update payment to CONFIRMED")
-		return
-	}
-
 	eventPayload := events.PaymentEventPayload{
 		PaymentID:        payment.PaymentID.String(),
 		IdempotencyKey:   payment.IdempotencyKey,
 		AccountID:        payment.AccountID.String(),
+		UserID:           payment.UserID.String(),
 		PaymentType:      string(payment.PaymentType),
 		Amount:           payment.Amount,
 		Currency:         payment.Currency,
@@ -273,8 +310,9 @@ func (s *PaymentSaga) confirmAndSettle(ctx context.Context, payment *domain.Paym
 		Reference:        payment.Reference,
 	}
 
-	if err := s.eventPublisher.PublishPaymentEvent(ctx, events.EventTypePaymentConfirmed, eventPayload, correlationID); err != nil {
-		s.logger.Error().Err(err).Msg("failed to publish payment.confirmed event")
+	if err := s.persistTransition(ctx, payment, events.EventTypePaymentConfirmed, eventPayload, correlationID); err != nil {
+		s.logger.Error().Err(err).Str("payment_id", payment.PaymentID.String()).Msg("failed to persist confirmed transition; payment remains PROCESSING")
+		return
 	}
 
 	s.settlePayment(ctx, payment, correlationID)
@@ -286,15 +324,11 @@ func (s *PaymentSaga) settlePayment(ctx context.Context, payment *domain.Payment
 		return
 	}
 
-	if err := s.paymentRepo.Update(ctx, payment); err != nil {
-		s.logger.Error().Err(err).Str("payment_id", payment.PaymentID.String()).Msg("failed to update payment to SETTLED")
-		return
-	}
-
 	eventPayload := events.PaymentEventPayload{
 		PaymentID:        payment.PaymentID.String(),
 		IdempotencyKey:   payment.IdempotencyKey,
 		AccountID:        payment.AccountID.String(),
+		UserID:           payment.UserID.String(),
 		PaymentType:      string(payment.PaymentType),
 		Amount:           payment.Amount,
 		Currency:         payment.Currency,
@@ -305,8 +339,9 @@ func (s *PaymentSaga) settlePayment(ctx context.Context, payment *domain.Payment
 		Reference:        payment.Reference,
 	}
 
-	if err := s.eventPublisher.PublishPaymentEvent(ctx, events.EventTypePaymentSettled, eventPayload, correlationID); err != nil {
-		s.logger.Error().Err(err).Msg("failed to publish payment.settled event")
+	if err := s.persistTransition(ctx, payment, events.EventTypePaymentSettled, eventPayload, correlationID); err != nil {
+		s.logger.Error().Err(err).Str("payment_id", payment.PaymentID.String()).Msg("failed to persist settled transition; payment remains CONFIRMED")
+		return
 	}
 
 	s.logger.Info().
@@ -332,15 +367,11 @@ func (s *PaymentSaga) failPayment(ctx context.Context, payment *domain.Payment, 
 	payment.FailureReason = reason
 	payment.UpdatedAt = time.Now().UTC()
 
-	if err := s.paymentRepo.Update(ctx, payment); err != nil {
-		s.logger.Error().Err(err).Str("payment_id", payment.PaymentID.String()).Msg("failed to update payment to FAILED")
-		return
-	}
-
 	eventPayload := events.PaymentEventPayload{
 		PaymentID:        payment.PaymentID.String(),
 		IdempotencyKey:   payment.IdempotencyKey,
 		AccountID:        payment.AccountID.String(),
+		UserID:           payment.UserID.String(),
 		PaymentType:      string(payment.PaymentType),
 		Amount:           payment.Amount,
 		Currency:         payment.Currency,
@@ -351,8 +382,9 @@ func (s *PaymentSaga) failPayment(ctx context.Context, payment *domain.Payment, 
 		Reference:        payment.Reference,
 	}
 
-	if err := s.eventPublisher.PublishPaymentEvent(ctx, events.EventTypePaymentFailed, eventPayload, correlationID); err != nil {
-		s.logger.Error().Err(err).Msg("failed to publish payment.failed event")
+	if err := s.persistTransition(ctx, payment, events.EventTypePaymentFailed, eventPayload, correlationID); err != nil {
+		s.logger.Error().Err(err).Str("payment_id", payment.PaymentID.String()).Msg("failed to persist failed transition")
+		return
 	}
 
 	s.releaseReservation(ctx, payment, correlationID)
@@ -369,15 +401,11 @@ func (s *PaymentSaga) markUnknown(ctx context.Context, payment *domain.Payment, 
 		return
 	}
 
-	if err := s.paymentRepo.Update(ctx, payment); err != nil {
-		s.logger.Error().Err(err).Str("payment_id", payment.PaymentID.String()).Msg("failed to update payment to UNKNOWN")
-		return
-	}
-
 	eventPayload := events.PaymentEventPayload{
 		PaymentID:        payment.PaymentID.String(),
 		IdempotencyKey:   payment.IdempotencyKey,
 		AccountID:        payment.AccountID.String(),
+		UserID:           payment.UserID.String(),
 		PaymentType:      string(payment.PaymentType),
 		Amount:           payment.Amount,
 		Currency:         payment.Currency,
@@ -388,8 +416,9 @@ func (s *PaymentSaga) markUnknown(ctx context.Context, payment *domain.Payment, 
 		Reference:        payment.Reference,
 	}
 
-	if err := s.eventPublisher.PublishPaymentEvent(ctx, events.EventTypePaymentUnknown, eventPayload, correlationID); err != nil {
-		s.logger.Error().Err(err).Msg("failed to publish payment.unknown event")
+	if err := s.persistTransition(ctx, payment, events.EventTypePaymentUnknown, eventPayload, correlationID); err != nil {
+		s.logger.Error().Err(err).Str("payment_id", payment.PaymentID.String()).Msg("failed to persist UNKNOWN transition")
+		return
 	}
 
 	s.logger.Info().
@@ -421,16 +450,11 @@ func (s *PaymentSaga) ExecuteCancelPayment(ctx context.Context, paymentID string
 		return nil, fmt.Errorf("transition failed: %w", err)
 	}
 
-	if err := s.paymentRepo.Update(ctx, payment); err != nil {
-		return nil, fmt.Errorf("updating payment: %w", err)
-	}
-
-	s.releaseReservation(ctx, payment, correlationID)
-
 	eventPayload := events.PaymentEventPayload{
 		PaymentID:        payment.PaymentID.String(),
 		IdempotencyKey:   payment.IdempotencyKey,
 		AccountID:        payment.AccountID.String(),
+		UserID:           payment.UserID.String(),
 		PaymentType:      string(payment.PaymentType),
 		Amount:           payment.Amount,
 		Currency:         payment.Currency,
@@ -441,9 +465,11 @@ func (s *PaymentSaga) ExecuteCancelPayment(ctx context.Context, paymentID string
 		Reference:        payment.Reference,
 	}
 
-	if err := s.eventPublisher.PublishPaymentEvent(ctx, events.EventTypePaymentCancelled, eventPayload, correlationID); err != nil {
-		s.logger.Error().Err(err).Msg("failed to publish payment.cancelled event")
+	if err := s.persistTransition(ctx, payment, events.EventTypePaymentCancelled, eventPayload, correlationID); err != nil {
+		return nil, fmt.Errorf("persisting cancellation: %w", err)
 	}
+
+	s.releaseReservation(ctx, payment, correlationID)
 
 	s.logger.Info().
 		Str("payment_id", payment.PaymentID.String()).
@@ -535,13 +561,14 @@ func (s *PaymentSaga) releaseReservation(ctx context.Context, payment *domain.Pa
 	eventPayload := events.PaymentEventPayload{
 		PaymentID:     payment.PaymentID.String(),
 		AccountID:     payment.AccountID.String(),
+UserID:           payment.UserID.String(),
 		ReservationID: payment.ReservationID,
 		Amount:        payment.Amount,
 		Currency:      payment.Currency,
 	}
 
-	if err := s.eventPublisher.PublishPaymentEvent(ctx, events.EventTypePaymentReversed, eventPayload, correlationID); err != nil {
-		s.logger.Error().Err(err).Msg("failed to publish reservation release event")
+	if err := s.persistTransition(ctx, payment, events.EventTypePaymentReversed, eventPayload, correlationID); err != nil {
+		s.logger.Error().Err(err).Msg("failed to persist reservation release event")
 	}
 }
 

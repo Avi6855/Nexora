@@ -35,9 +35,13 @@ import com.nexora.app.core.design.theme.NexoraPrimary
 @Composable
 fun SecurityScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToDelegatedAccess: () -> Unit = {},
     viewModel: SecurityViewModel = hiltViewModel()
 ) {
     val biometricEnabled by viewModel.biometricEnabled.collectAsState()
+    val lockdownEnabled by viewModel.lockdownEnabled.collectAsState()
+    val lockdownBusy by viewModel.lockdownBusy.collectAsState()
+    val lockdownError by viewModel.lockdownError.collectAsState()
 
     Column(
         modifier = Modifier
@@ -97,6 +101,68 @@ fun SecurityScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
+                text = "Emergency Lockdown",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            // Emergency lockdown (Monzo-style): one tap blocks every way
+            // money can leave the account — card payments, transfers, cash —
+            // while money in, Direct Debits and savings sweeps continue.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        if (lockdownEnabled) MaterialTheme.colorScheme.errorContainer
+                        else MaterialTheme.colorScheme.surface
+                    )
+                    .padding(16.dp)
+                    .semantics {
+                        contentDescription = "Emergency lockdown, ${if (lockdownEnabled) "enabled" else "disabled"}"
+                    },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (lockdownEnabled) "Account is LOCKED" else "Freeze everything",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = if (lockdownEnabled)
+                            "Card payments, transfers and cash withdrawals are blocked. Money in still works."
+                        else
+                            "Instantly block all money out: cards, transfers, cash. Money in stays on.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (lockdownEnabled) MaterialTheme.colorScheme.onErrorContainer
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = lockdownEnabled,
+                    enabled = !lockdownBusy,
+                    onCheckedChange = { viewModel.toggleLockdown() },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = MaterialTheme.colorScheme.error,
+                        checkedTrackColor = MaterialTheme.colorScheme.error.copy(alpha = 0.3f)
+                    )
+                )
+            }
+
+            lockdownError?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
                 text = "App Security",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
@@ -125,6 +191,14 @@ fun SecurityScreen(
             SecurityItem(
                 title = "Devices",
                 subtitle = "Manage connected devices"
+            )
+
+            // Delegated access / Consent Centre: time-bound, capability-scoped
+            // view-only access for people you trust (never money movement).
+            SecurityItem(
+                title = "Delegated access",
+                subtitle = "Share view-only access, time-limited",
+                onClick = onNavigateToDelegatedAccess
             )
         }
     }

@@ -30,8 +30,8 @@ func (r *cassandraDeviceRepository) Create(ctx context.Context, device *domain.D
 		VALUES (?, ?, ?, ?, ?, ?, ?)`
 
 	return r.session.Query(query,
-		device.UserID,
-		device.DeviceID,
+		gocql.UUID(device.UserID),
+		gocql.UUID(device.DeviceID),
 		device.DeviceName,
 		string(device.DeviceType),
 		device.FCMToken,
@@ -42,13 +42,14 @@ func (r *cassandraDeviceRepository) Create(ctx context.Context, device *domain.D
 
 func (r *cassandraDeviceRepository) GetByID(ctx context.Context, userID uuid.UUID, deviceID uuid.UUID) (*domain.Device, error) {
 	var device domain.Device
+	var uid, did gocql.UUID
 
 	query := `SELECT user_id, device_id, device_name, device_type, fcm_token, last_active, created_at
 		FROM devices WHERE user_id = ? AND device_id = ?`
 
-	err := r.session.Query(query, userID, deviceID).WithContext(ctx).Scan(
-		&device.UserID,
-		&device.DeviceID,
+	err := r.session.Query(query, gocql.UUID(userID), gocql.UUID(deviceID)).WithContext(ctx).Scan(
+		&uid,
+		&did,
 		&device.DeviceName,
 		&device.DeviceType,
 		&device.FCMToken,
@@ -63,6 +64,8 @@ func (r *cassandraDeviceRepository) GetByID(ctx context.Context, userID uuid.UUI
 		return nil, err
 	}
 
+	device.UserID = uuid.UUID(uid)
+	device.DeviceID = uuid.UUID(did)
 	return &device, nil
 }
 
@@ -72,19 +75,22 @@ func (r *cassandraDeviceRepository) GetByUserID(ctx context.Context, userID uuid
 	query := `SELECT user_id, device_id, device_name, device_type, fcm_token, last_active, created_at
 		FROM devices WHERE user_id = ?`
 
-	iter := r.session.Query(query, userID).WithContext(ctx).Iter()
+	iter := r.session.Query(query, gocql.UUID(userID)).WithContext(ctx).Iter()
 	defer iter.Close()
 
 	var device domain.Device
+	var uid, did gocql.UUID
 	for iter.Scan(
-		&device.UserID,
-		&device.DeviceID,
+		&uid,
+		&did,
 		&device.DeviceName,
 		&device.DeviceType,
 		&device.FCMToken,
 		&device.LastActive,
 		&device.CreatedAt,
 	) {
+		device.UserID = uuid.UUID(uid)
+		device.DeviceID = uuid.UUID(did)
 		d := device
 		devices = append(devices, &d)
 	}
@@ -99,10 +105,10 @@ func (r *cassandraDeviceRepository) GetByUserID(ctx context.Context, userID uuid
 func (r *cassandraDeviceRepository) UpdateLastActive(ctx context.Context, userID uuid.UUID, deviceID uuid.UUID) error {
 	now := time.Now().UTC()
 	query := `UPDATE devices SET last_active = ? WHERE user_id = ? AND device_id = ?`
-	return r.session.Query(query, now, userID, deviceID).WithContext(ctx).Exec()
+	return r.session.Query(query, now, gocql.UUID(userID), gocql.UUID(deviceID)).WithContext(ctx).Exec()
 }
 
 func (r *cassandraDeviceRepository) UpdateFCMToken(ctx context.Context, userID uuid.UUID, deviceID uuid.UUID, fcmToken string) error {
 	query := `UPDATE devices SET fcm_token = ? WHERE user_id = ? AND device_id = ?`
-	return r.session.Query(query, fcmToken, userID, deviceID).WithContext(ctx).Exec()
+	return r.session.Query(query, fcmToken, gocql.UUID(userID), gocql.UUID(deviceID)).WithContext(ctx).Exec()
 }

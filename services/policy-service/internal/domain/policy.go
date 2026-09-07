@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -140,6 +141,64 @@ type CreatePolicyRequest struct {
 	PolicyType  PolicyType   `json:"policy_type"`
 	Scope       PolicyScope  `json:"scope"`
 	Rules       []PolicyRule `json:"rules"`
+}
+
+// ── Feature flags: progressive rollout + automatic rollback ─────────────────
+
+// FeatureFlag is a progressively-rolled-out capability switch. Assignment is
+// deterministic: hash(flag_id, user_id) < rollout_pct, so the same user is
+// always in the same cohort across replicas and restarts.
+type FeatureFlag struct {
+	FlagID      uuid.UUID `json:"flag_id"`
+	Key         string    `json:"key"`
+	Description string    `json:"description"`
+	Enabled     bool      `json:"enabled"`
+	// RolloutPct: 0 = off for everyone, 100 = fully on.
+	RolloutPct int       `json:"rollout_pct"`
+	// CohortConstraint (optional) like "app_version>=2.1" or "country=UK".
+	CohortConstraint string `json:"cohort_constraint,omitempty"`
+	// Auto-rollback guards: measured by the flag's own metrics window.
+	BaselineErrorPct  float64   `json:"baseline_error_pct"`
+	MaxErrorPct       float64   `json:"max_error_pct"`
+	MaxLatencyMs      float64   `json:"max_latency_ms"`
+	ErrorPct          float64   `json:"error_pct"`
+	LatencyMs         float64   `json:"latency_ms"`
+	RolledBack        bool      `json:"rolled_back"`
+	RollbackReason    string    `json:"rollback_reason,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+var (
+	ErrFlagNotFound = errorsNew("feature flag not found")
+	ErrInvalidFlag  = errorsNew("flag key and valid rollout_pct (0-100) are required")
+)
+
+// errorsNew avoids importing errors twice in this file's const block style.
+func errorsNew(msg string) error { return fmt.Errorf("%s", msg) }
+
+// CreateFlagRequest is the create/update payload.
+type CreateFlagRequest struct {
+	Key              string  `json:"key"`
+	Description      string  `json:"description"`
+	RolloutPct       int     `json:"rollout_pct"`
+	CohortConstraint string  `json:"cohort_constraint,omitempty"`
+	MaxErrorPct      float64 `json:"max_error_pct,omitempty"`
+	MaxLatencyMs     float64 `json:"max_latency_ms,omitempty"`
+}
+
+// RecordFlagMetricRequest reports the flag's live error rate / latency.
+type RecordFlagMetricRequest struct {
+	ErrorPct  float64 `json:"error_pct"`
+	LatencyMs float64 `json:"latency_ms"`
+}
+
+// EvaluateFlagResponse answers "is this user in the flag's cohort?".
+type EvaluateFlagResponse struct {
+	Key      string `json:"key"`
+	Enabled  bool   `json:"enabled"`
+	RolloutPct int  `json:"rollout_pct"`
+	Reason   string `json:"reason"`
 }
 
 type ErrorResponse struct {

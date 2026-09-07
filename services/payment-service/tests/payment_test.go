@@ -57,6 +57,17 @@ func (r *InMemoryPaymentRepository) GetByAccountID(ctx context.Context, accountI
 	return r.byAccount[accountID], nil
 }
 
+// GetByUserID implements the repository interface for the app's payments list.
+func (r *InMemoryPaymentRepository) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*domain.Payment, error) {
+	payments := make([]*domain.Payment, 0)
+	for _, p := range r.payments {
+		if p.UserID == userID {
+			payments = append(payments, p)
+		}
+	}
+	return payments, nil
+}
+
 func (r *InMemoryPaymentRepository) Update(ctx context.Context, payment *domain.Payment) error {
 	r.payments[payment.PaymentID] = payment
 	return nil
@@ -251,7 +262,7 @@ func TestInvalidTransition(t *testing.T) {
 		t.Error("expected error when processing payment in CREATED state, got nil")
 	}
 
-	_, err = paymentService.SettlePayment(ctx, payment.PaymentID)
+	err = paymentService.SettlePayment(ctx, payment.PaymentID)
 	if err == nil {
 		t.Error("expected error when settling payment in CREATED state, got nil")
 	}

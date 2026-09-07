@@ -6,7 +6,9 @@
 
 # Go
 vendor/
-go.sum
+
+# Local toolchains / caches (project-local, never committed)
+.tools/
 
 # Android build outputs
 android/.gradle/

@@ -253,6 +253,38 @@ func (s *FraudService) AnalyzePayment(ctx context.Context, req *domain.AnalyzePa
 	}, nil
 }
 
+// EvaluateCardAuthorization is the real-time (sub-second) card presentment
+// decision. The full evaluation runs inside the service package over the real
+// stored history; see authorization_evaluator.go.
+func (s *FraudService) EvaluateCardAuthorization(ctx context.Context, req *domain.EvaluateAuthorizationRequest) (*domain.EvaluateAuthorizationResponse, error) {
+	evaluator := NewAuthorizationEvaluator(s.repo)
+	resp, err := evaluator.Evaluate(ctx, req)
+	if err != nil {
+		s.logger.Error().Err(err).Str("authorization_id", req.AuthorizationID).Msg("authorisation evaluation failed")
+		return nil, err
+	}
+	s.logger.Info().
+		Str("authorization_id", req.AuthorizationID).
+		Str("decision", string(resp.Decision)).
+		Float64("risk_score", resp.RiskScore).
+		Msg("authorisation evaluated")
+	return resp, nil
+}
+
+// EvaluateTransferRisk is the outbound bank-transfer scam-intelligence
+// decision (the card-equivalent check for payments leaving the account).
+// The evaluation runs over the user's stored decision history; see
+// transfer_evaluator.go.
+func (s *FraudService) EvaluateTransferRisk(ctx context.Context, req *domain.TransferRiskRequest) (*domain.TransferRiskResponse, error) {
+	evaluator := NewTransferEvaluator(s.repo, s.logger)
+	resp, err := evaluator.Evaluate(ctx, req)
+	if err != nil {
+		s.logger.Error().Err(err).Str("request_id", req.RequestID).Msg("transfer risk evaluation failed")
+		return nil, err
+	}
+	return resp, nil
+}
+
 func (s *FraudService) RecordFraudEvent(ctx context.Context, event *domain.FraudEvent) error {
 	s.logger.Info().Str("event_id", event.EventID.String()).Msg("recording fraud event")
 

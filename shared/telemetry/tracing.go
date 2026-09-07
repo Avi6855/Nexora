@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -25,6 +26,7 @@ type Span struct {
 	Status     string            `json:"status"`
 	Attributes map[string]string `json:"attributes,omitempty"`
 	Events     []SpanEvent       `json:"events,omitempty"`
+	mu         sync.Mutex
 }
 
 type SpanEvent struct {
@@ -162,8 +164,8 @@ func generateSpanID() string {
 type TracingContextKey string
 
 const (
-	TraceIDKey    TracingContextKey = "trace_id"
-	SpanIDKey     TracingContextKey = "span_id"
-	ParentIDKey   TracingContextKey = "parent_id"
+	TraceIDKey     TracingContextKey = "trace_id"
+	SpanIDKey      TracingContextKey = "span_id"
+	ParentIDKey    TracingContextKey = "parent_id"
 	ServiceNameKey TracingContextKey = "service_name"
 )

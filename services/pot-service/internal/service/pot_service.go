@@ -1,58 +1,39 @@
 package service
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/google/uuid"
+	"github.com/nexora/nexora/services/pot-service/internal/clients"
 	"github.com/nexora/nexora/services/pot-service/internal/domain"
 	"github.com/nexora/nexora/services/pot-service/internal/events"
 	"github.com/nexora/nexora/services/pot-service/internal/repository"
+	"github.com/rs/zerolog"
 )
 
-type LedgerEntryRequest struct {
-	AccountID string            `json:"account_id"`
-	EntryType string            `json:"entry_type"`
-	Amount    int64             `json:"amount"`
-	Currency  string            `json:"currency"`
-	Reference string            `json:"reference"`
-	Metadata  map[string]string `json:"metadata,omitempty"`
-}
-
-type LedgerEntryResponse struct {
-	EntryID     string `json:"entry_id"`
-	AccountID   string `json:"account_id"`
-	EntryType   string `json:"entry_type"`
-	Amount      int64  `json:"amount"`
-	BalanceAfter int64 `json:"balance_after"`
-	Currency    string `json:"currency"`
-	Reference   string `json:"reference"`
-	CreatedAt   string `json:"created_at"`
-}
+var (
+	ErrInsufficientFunds = clients.ErrInsufficientFunds
+	ErrAccountNotOwned   = errors.New("account does not belong to caller")
+)
 
 type PotService struct {
-	potRepo      repository.PotRepository
-	publisher    events.EventPublisher
-	ledgerBaseURL string
-	httpClient   *http.Client
-	logger       zerolog.Logger
+	potRepo       repository.PotRepository
+	publisher     events.EventPublisher
+	ledgerClient  *clients.LedgerClient
+	accountClient *clients.AccountClient
+	logger        zerolog.Logger
 }
 
-func NewPotService(potRepo repository.PotRepository, publisher events.EventPublisher, ledgerBaseURL string, logger zerolog.Logger) *PotService {
+func NewPotService(potRepo repository.PotRepository, publisher events.EventPublisher, ledgerClient *clients.LedgerClient, accountClient *clients.AccountClient, logger zerolog.Logger) *PotService {
 	return &PotService{
-		potRepo:      potRepo,
-		publisher:    publisher,
-		ledgerBaseURL: ledgerBaseURL,
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
-		logger: logger,
+		potRepo:       potRepo,
+		publisher:     publisher,
+		ledgerClient:  ledgerClient,
+		accountClient: accountClient,
+		logger:        logger,
 	}
 }
 
@@ -81,10 +62,22 @@ func (s *PotService) GetPotsByUser(ctx context.Context, userID uuid.UUID) ([]*do
 	return s.potRepo.GetByUserID(ctx, userID)
 }
 
-func (s *PotService) GetPot(ctx context.Context, id uuid.UUID) (*domain.Pot, error) {
-	return s.potRepo.GetByID(ctx, id)
+// GetPotForUser returns a pot only when the caller owns it.
+func (s *PotService) GetPotForUser(ctx context.Context, userID, potID uuid.UUID) (*domain.Pot, error) {
+	pot, err := s.potRepo.GetByID(ctx, potID)
+	if err != nil {
+		return nil, err
+	}
+	if pot.UserID != userID {
+		return nil, domain.ErrPotNotFound
+	}
+	return pot, nil
 }
 
+// Deposit moves real money from the caller's funding account into the pot:
+// the ledger debits the account (checking its available balance atomically)
+// and credits the pot's own ledger account (pot_id). Pot balances therefore
+// always represent booked money — no balance is ever minted or double counted.
 func (s *PotService) Deposit(ctx context.Context, potID, userID, accountID uuid.UUID, amount int64, correlationID string) error {
 	s.logger.Info().Str("pot_id", potID.String()).Int64("amount", amount).Msg("depositing to pot")
 
@@ -96,47 +89,49 @@ func (s *PotService) Deposit(ctx context.Context, potID, userID, accountID uuid.
 	if err != nil {
 		return err
 	}
-
 	if pot.UserID != userID {
 		return domain.ErrPotNotFound
+	}
+	if pot.Status != domain.PotStatusActive {
+		return domain.ErrPotClosed
+	}
+
+	// The funding account must belong to the pot owner.
+	if err := s.requireOwnedAccount(ctx, userID, accountID); err != nil {
+		return err
+	}
+
+	key := correlationID
+	if key == "" {
+		key = uuid.New().String()
+	}
+	if err := s.ledgerClient.BookTransfer(ctx, accountID, potID, amount, pot.Currency, "pot-deposit:"+potID.String()+":"+key, "Deposit to pot "+pot.Name); err != nil {
+		if errors.Is(err, clients.ErrInsufficientFunds) {
+			return ErrInsufficientFunds
+		}
+		return fmt.Errorf("booking pot deposit: %w", err)
 	}
 
 	if err := pot.Deposit(amount); err != nil {
 		return err
 	}
-
-	ledgerReq := LedgerEntryRequest{
-		AccountID: accountID.String(),
-		EntryType: "CREDIT",
-		Amount:    amount,
-		Currency:  pot.Currency,
-		Reference: fmt.Sprintf("pot-deposit:%s", potID.String()),
-		Metadata: map[string]string{
-			"pot_id": potID.String(),
-			"user_id": userID.String(),
-		},
-	}
-
-	_, err = s.createLedgerEntry(ctx, ledgerReq)
-	if err != nil {
-		return fmt.Errorf("creating ledger entry for deposit: %w", err)
-	}
-
 	if err := s.potRepo.Update(ctx, pot); err != nil {
 		return fmt.Errorf("persisting pot deposit: %w", err)
 	}
 
 	_ = s.publisher.PublishPotEvent(ctx, events.EventTypePotDeposit, map[string]interface{}{
-		"pot_id":    potID.String(),
-		"user_id":   userID.String(),
-		"amount":    amount,
-		"currency":  pot.Currency,
-		"balance":   pot.CurrentAmount,
+		"pot_id":   potID.String(),
+		"user_id":  userID.String(),
+		"amount":   amount,
+		"currency": pot.Currency,
+		"balance":  pot.CurrentAmount,
 	}, potID.String(), correlationID)
 
 	return nil
 }
 
+// Withdraw moves money from the pot back to the caller's account by reversing
+// the double-entry: DEBIT the pot's ledger account, CREDIT the account.
 func (s *PotService) Withdraw(ctx context.Context, potID, userID, accountID uuid.UUID, amount int64, correlationID string) error {
 	s.logger.Info().Str("pot_id", potID.String()).Int64("amount", amount).Msg("withdrawing from pot")
 
@@ -148,45 +143,93 @@ func (s *PotService) Withdraw(ctx context.Context, potID, userID, accountID uuid
 	if err != nil {
 		return err
 	}
-
 	if pot.UserID != userID {
 		return domain.ErrPotNotFound
+	}
+	if pot.Status != domain.PotStatusActive {
+		return domain.ErrPotClosed
+	}
+	if pot.CurrentAmount < amount {
+		return domain.ErrInsufficientFunds
+	}
+
+	if err := s.requireOwnedAccount(ctx, userID, accountID); err != nil {
+		return err
+	}
+
+	key := correlationID
+	if key == "" {
+		key = uuid.New().String()
+	}
+	// Source is the pot's ledger account; the ledger re-checks the pot's real
+	// booked balance atomically.
+	if err := s.ledgerClient.BookTransfer(ctx, potID, accountID, amount, pot.Currency, "pot-withdraw:"+potID.String()+":"+key, "Withdraw from pot "+pot.Name); err != nil {
+		if errors.Is(err, clients.ErrInsufficientFunds) {
+			return ErrInsufficientFunds
+		}
+		return fmt.Errorf("booking pot withdrawal: %w", err)
 	}
 
 	if err := pot.Withdraw(amount); err != nil {
 		return err
 	}
-
-	ledgerReq := LedgerEntryRequest{
-		AccountID: accountID.String(),
-		EntryType: "DEBIT",
-		Amount:    amount,
-		Currency:  pot.Currency,
-		Reference: fmt.Sprintf("pot-withdraw:%s", potID.String()),
-		Metadata: map[string]string{
-			"pot_id": potID.String(),
-			"user_id": userID.String(),
-		},
-	}
-
-	_, err = s.createLedgerEntry(ctx, ledgerReq)
-	if err != nil {
-		return fmt.Errorf("creating ledger entry for withdrawal: %w", err)
-	}
-
 	if err := s.potRepo.Update(ctx, pot); err != nil {
 		return fmt.Errorf("persisting pot withdrawal: %w", err)
 	}
 
 	_ = s.publisher.PublishPotEvent(ctx, events.EventTypePotWithdraw, map[string]interface{}{
-		"pot_id":    potID.String(),
-		"user_id":   userID.String(),
-		"amount":    amount,
-		"currency":  pot.Currency,
-		"balance":   pot.CurrentAmount,
+		"pot_id":   potID.String(),
+		"user_id":  userID.String(),
+		"amount":   amount,
+		"currency": pot.Currency,
+		"balance":  pot.CurrentAmount,
 	}, potID.String(), correlationID)
 
 	return nil
+}
+
+// requireOwnedAccount verifies an account belongs to the given user via the
+// account service (internal call).
+func (s *PotService) requireOwnedAccount(ctx context.Context, userID, accountID uuid.UUID) error {
+	info, err := s.accountClient.GetAccount(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if info.UserID != userID {
+		return ErrAccountNotOwned
+	}
+	return nil
+}
+
+// SetRoundUp toggles automatic round-ups into this pot. When enabled, every
+// captured card payment sweeps its spare change (rounded to the next pound)
+// into the pot via the roundups consumer.
+func (s *PotService) SetRoundUp(ctx context.Context, potID, userID uuid.UUID, enabled bool) (*domain.Pot, error) {
+	s.logger.Info().Str("pot_id", potID.String()).Bool("enabled", enabled).Msg("setting round-up")
+
+	pot, err := s.potRepo.GetByID(ctx, potID)
+	if err != nil {
+		return nil, err
+	}
+	if pot.UserID != userID {
+		return nil, domain.ErrPotNotFound
+	}
+	if pot.Status != domain.PotStatusActive {
+		return nil, domain.ErrPotClosed
+	}
+
+	pot.RoundUpEnabled = enabled
+	pot.UpdatedAt = time.Now().UTC()
+	if err := s.potRepo.Update(ctx, pot); err != nil {
+		return nil, fmt.Errorf("persisting round-up toggle: %w", err)
+	}
+
+	_ = s.publisher.PublishPotEvent(ctx, events.EventTypePotUpdated, map[string]interface{}{
+		"pot_id":           potID.String(),
+		"user_id":          userID.String(),
+		"round_up_enabled": enabled,
+	}, potID.String(), "")
+	return pot, nil
 }
 
 func (s *PotService) RenamePot(ctx context.Context, potID, userID uuid.UUID, newName string) error {
@@ -200,11 +243,9 @@ func (s *PotService) RenamePot(ctx context.Context, potID, userID uuid.UUID, new
 	if err != nil {
 		return err
 	}
-
 	if pot.UserID != userID {
 		return domain.ErrPotNotFound
 	}
-
 	if pot.Status == domain.PotStatusClosed {
 		return fmt.Errorf("%w: cannot rename a closed pot", domain.ErrPotClosed)
 	}
@@ -234,7 +275,6 @@ func (s *PotService) DeletePot(ctx context.Context, potID, userID uuid.UUID) err
 	if err != nil {
 		return err
 	}
-
 	if pot.UserID != userID {
 		return domain.ErrPotNotFound
 	}
@@ -242,7 +282,6 @@ func (s *PotService) DeletePot(ctx context.Context, potID, userID uuid.UUID) err
 	if err := pot.Close(); err != nil {
 		return err
 	}
-
 	if pot.CurrentAmount != 0 {
 		return domain.ErrBalanceNonZero
 	}
@@ -258,40 +297,4 @@ func (s *PotService) DeletePot(ctx context.Context, potID, userID uuid.UUID) err
 	}, potID.String(), "")
 
 	return nil
-}
-
-func (s *PotService) createLedgerEntry(ctx context.Context, req LedgerEntryRequest) (*LedgerEntryResponse, error) {
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling ledger request: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/v1/ledger/entries", s.ledgerBaseURL)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("creating HTTP request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := s.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("calling ledger service: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading ledger response: %w", err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("ledger service returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var entryResp LedgerEntryResponse
-	if err := json.Unmarshal(respBody, &entryResp); err != nil {
-		return nil, fmt.Errorf("unmarshaling ledger response: %w", err)
-	}
-
-	return &entryResp, nil
 }

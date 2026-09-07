@@ -15,6 +15,7 @@ import (
 
 	"github.com/nexora/nexora/shared/config"
 	"github.com/nexora/nexora/shared/health"
+	"github.com/nexora/nexora/services/replay-service/internal/clients"
 	"github.com/nexora/nexora/services/replay-service/internal/events"
 	"github.com/nexora/nexora/services/replay-service/internal/repository"
 	"github.com/nexora/nexora/services/replay-service/internal/service"
@@ -56,7 +57,7 @@ func main() {
 		defer producer.Close()
 	}
 
-	replayService := service.NewReplayService(replayRepo, producer, logger)
+	replayService := service.NewReplayService(replayRepo, producer, clients.NewLedgerClient(), logger)
 
 	handlers := transport.NewHandlers(replayService, logger)
 	router := mux.NewRouter()

@@ -13,12 +13,14 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
-	"github.com/nexora/nexora/shared/config"
-	"github.com/nexora/nexora/shared/health"
+	"github.com/nexora/nexora/services/pot-service/internal/clients"
 	"github.com/nexora/nexora/services/pot-service/internal/events"
 	"github.com/nexora/nexora/services/pot-service/internal/repository"
 	"github.com/nexora/nexora/services/pot-service/internal/service"
 	"github.com/nexora/nexora/services/pot-service/internal/transport"
+	"github.com/nexora/nexora/shared/auth"
+	"github.com/nexora/nexora/shared/config"
+	"github.com/nexora/nexora/shared/health"
 )
 
 func main() {
@@ -54,14 +56,26 @@ func main() {
 	})
 	defer publisher.Close()
 
-	ledgerBaseURL := getEnv("LEDGER_SERVICE_URL", "http://ledger-service:8084")
-
 	potRepo := repository.NewCassandraPotRepository(session)
-	potService := service.NewPotService(potRepo, publisher, ledgerBaseURL, logger)
+	potService := service.NewPotService(potRepo, publisher, clients.NewLedgerClient(), clients.NewAccountClient(), logger)
+
+	// Roundups: sweep spare change from captured card authorizations into the
+	// user's round-up-enabled pot. Exactly-once via the roundup_processed LWT.
+	roundupRepo := repository.NewCassandraRoundupRepository(session)
+	roundupConsumer := events.NewRoundupConsumer(potService, roundupRepo, logger)
+	roundupTopics := []string{"nexora.card.authorization.captured"}
+	kafkaConsumer, err := events.NewKafkaConsumer(cfg.Kafka.Brokers, cfg.Kafka.GroupID+"-roundups", roundupTopics, roundupConsumer.HandleRoundupEvent, logger)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to create Kafka consumer, roundups disabled")
+	} else {
+		kafkaConsumer.Start(context.Background())
+		logger.Info().Strs("topics", roundupTopics).Msg("roundups Kafka consumer started")
+	}
 
 	handlers := transport.NewHandlers(potService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"), "/v1/health", "/metrics").Middleware)
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)
@@ -100,6 +114,11 @@ func main() {
 	defer cancel()
 	httpServer.Shutdown(shutdownCtx)
 	healthServer.Shutdown(shutdownCtx)
+	if kafkaConsumer != nil {
+		if err := kafkaConsumer.Close(); err != nil {
+			logger.Error().Err(err).Msg("roundups consumer shutdown error")
+		}
+	}
 	logger.Info().Msg("server stopped")
 }
 

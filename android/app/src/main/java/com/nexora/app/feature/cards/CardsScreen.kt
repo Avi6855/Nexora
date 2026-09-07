@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,6 +48,7 @@ import com.nexora.app.core.model.Card
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CardsScreen(
+    onNavigateToCardDetail: (String) -> Unit = {},
     viewModel: CardsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -80,6 +82,7 @@ fun CardsScreen(
                         ) {
                             CreditCardItem(
                                 card = card,
+                                onClick = { onNavigateToCardDetail(card.id) },
                                 onFreeze = { viewModel.freezeCard(card.id) },
                                 onUnfreeze = { viewModel.unfreezeCard(card.id) }
                             )
@@ -126,12 +129,14 @@ fun CardsScreen(
 @Composable
 private fun CreditCardItem(
     card: Card,
+    onClick: () -> Unit,
     onFreeze: () -> Unit,
     onUnfreeze: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .semantics {
                 contentDescription = "Nexora ${card.type} card ending in ${card.lastFourDigits}"
             },

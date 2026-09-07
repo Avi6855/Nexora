@@ -3,11 +3,13 @@ package service
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
+	"github.com/nexora/nexora/services/ledger-service/internal/clients"
 	"github.com/nexora/nexora/services/ledger-service/internal/domain"
 	"github.com/nexora/nexora/services/ledger-service/internal/events"
 	"github.com/nexora/nexora/services/ledger-service/internal/repository"
@@ -17,14 +19,33 @@ type LedgerService struct {
 	ledgerRepo repository.LedgerRepository
 	producer   *events.KafkaProducer
 	logger     zerolog.Logger
+	// incidents is the optional ops integration used by the invariant monitor
+	// to file SEV1 integrity incidents (nil = freeze + event trail only).
+	incidents clients.IncidentReporter
+
+	// accountLocks serialises balance-mutating operations per account. The
+	// check-then-act in ReserveFunds (available >= amount, then INSERT) is
+	// otherwise a TOCTOU race; with a single writer per account the invariant
+	// "reserved never exceeds balance" holds deterministically. Scale-out would
+	// shard accounts onto dedicated single-writer partitions (actor model).
+	accountLocks sync.Map // accountID (uuid.UUID) -> *sync.Mutex
 }
 
 func NewLedgerService(ledgerRepo repository.LedgerRepository, producer *events.KafkaProducer, logger zerolog.Logger) *LedgerService {
 	return &LedgerService{
-		ledgerRepo: ledgerRepo,
-		producer:   producer,
-		logger:     logger,
+		ledgerRepo:   ledgerRepo,
+		producer:     producer,
+		logger:       logger,
+		accountLocks: sync.Map{},
 	}
+}
+
+// lockAccount acquires the per-account mutex and returns its unlock function.
+func (s *LedgerService) lockAccount(accountID uuid.UUID) func() {
+	v, _ := s.accountLocks.LoadOrStore(accountID, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 func (s *LedgerService) CreateDoubleEntryTransaction(ctx context.Context, req *domain.CreateDoubleEntryRequest) (*domain.LedgerTransaction, []*domain.LedgerEntry, error) {
@@ -41,21 +62,30 @@ func (s *LedgerService) CreateDoubleEntryTransaction(ctx context.Context, req *d
 		return existing, entries, nil
 	}
 
+	// Refuse new bookings against accounts under lockdown or frozen by the
+	// invariant monitor before any state is written (idempotent retries of an
+	// earlier transaction return above and are never blocked).
+	for _, line := range req.Lines {
+		if err := s.ensureAccountWritable(ctx, line.AccountID); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	txID := uuid.New()
 	now := time.Now().UTC()
 
 	tx := &domain.LedgerTransaction{
-		TransactionID:  txID,
-		IdempotencyKey: req.IdempotencyKey,
+		TransactionID:   txID,
+		IdempotencyKey:  req.IdempotencyKey,
 		TransactionType: req.TransactionType,
-		Status:         domain.TransactionStatusPending,
-		TotalAmount:    req.Amount,
-		Currency:       req.Currency,
-		Description:    req.Description,
-		CorrelationID:  req.CorrelationID,
-		CausationID:    req.CausationID,
-		EventVersion:   1,
-		CreatedAt:      now,
+		Status:          domain.TransactionStatusPending,
+		TotalAmount:     req.Amount,
+		Currency:        req.Currency,
+		Description:     req.Description,
+		CorrelationID:   req.CorrelationID,
+		CausationID:     req.CausationID,
+		EventVersion:    1,
+		CreatedAt:       now,
 	}
 
 	if err := s.ledgerRepo.CreateTransaction(ctx, tx); err != nil {
@@ -103,6 +133,7 @@ func (s *LedgerService) CreateDoubleEntryTransaction(ctx context.Context, req *d
 			BalanceBefore:  balance,
 			BalanceAfter:   balanceAfter,
 			Description:    req.Description,
+			Category:       domain.InferCategory(req.Description),
 			CorrelationID:  req.CorrelationID,
 			CausationID:    req.CausationID,
 			EventVersion:   1,
@@ -231,6 +262,16 @@ func (s *LedgerService) ReserveFunds(ctx context.Context, accountID uuid.UUID, a
 		Int64("amount", amount).
 		Msg("reserving funds")
 
+	// Serialise the availability check + insert per account so concurrent
+	// authorisations cannot overspend the available balance.
+	unlock := s.lockAccount(accountID)
+	defer unlock()
+
+	// A frozen (integrity-violated) account cannot take new holds either.
+	if err := s.ensureAccountWritable(ctx, accountID); err != nil {
+		return nil, err
+	}
+
 	available, err := s.GetAvailableBalance(ctx, accountID)
 	if err != nil {
 		return nil, fmt.Errorf("checking available balance: %w", err)
@@ -327,6 +368,7 @@ func (s *LedgerService) SettleReservation(ctx context.Context, reservationID uui
 		BalanceBefore:  balance,
 		BalanceAfter:   balance - res.Amount,
 		Description:    fmt.Sprintf("settlement of reservation %s", reservationID.String()),
+		Category:       domain.CategoryOther,
 		EventVersion:   1,
 		CreatedAt:      now,
 	}
@@ -347,9 +389,64 @@ func (s *LedgerService) GetEntries(ctx context.Context, accountID uuid.UUID, lim
 	if limit <= 0 {
 		limit = 100
 	}
-	return s.ledgerRepo.GetEntriesByAccount(ctx, accountID, limit)
+	return s.GetEntriesFiltered(ctx, accountID, domain.EntryFilter{Limit: limit})
+}
+
+// GetEntriesFiltered returns ledger entries with optional search/category/type
+// filters, and attaches any user notes from transaction_notes to each entry so
+// the app sees description + note in one payload.
+func (s *LedgerService) GetEntriesFiltered(ctx context.Context, accountID uuid.UUID, filter domain.EntryFilter) ([]*domain.LedgerEntry, error) {
+	entries, err := s.ledgerRepo.GetEntriesByAccount(ctx, accountID, filter)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range entries {
+		note, err := s.ledgerRepo.GetNote(ctx, e.EntryID)
+		if err != nil {
+			s.logger.Warn().Err(err).Str("entry_id", e.EntryID.String()).Msg("could not read transaction note")
+			continue
+		}
+		if note != nil {
+			e.Note = note.Note
+		}
+	}
+	return entries, nil
+}
+
+// UpdateEntryNote stores (or clears, with an empty note) the caller's
+// annotation on a ledger entry. The caller must own the entry's account.
+func (s *LedgerService) UpdateEntryNote(ctx context.Context, entryID, userID uuid.UUID, note string) error {
+	entry, err := s.ledgerRepo.GetEntryByID(ctx, entryID)
+	if err != nil {
+		return err
+	}
+	owner, err := s.ledgerRepo.GetAccountOwner(ctx, entry.AccountID)
+	if err != nil {
+		return fmt.Errorf("resolving entry owner: %w", err)
+	}
+	if owner != userID {
+		return domain.ErrAccountNotFound // do not leak other users' entries
+	}
+	return s.ledgerRepo.UpsertNote(ctx, &domain.TransactionNote{
+		EntryID:   entryID,
+		UserID:    userID,
+		Note:      note,
+		UpdatedAt: time.Now().UTC(),
+	})
 }
 
 func (s *LedgerService) GetTransaction(ctx context.Context, txID uuid.UUID) (*domain.LedgerTransaction, error) {
 	return s.ledgerRepo.GetTransaction(ctx, txID)
+}
+
+// AccountOwner resolves the user that owns an account (ownership checks on
+// user-facing reads/writes live in the transport layer).
+func (s *LedgerService) AccountOwner(ctx context.Context, accountID uuid.UUID) (uuid.UUID, error) {
+	return s.ledgerRepo.GetAccountOwner(ctx, accountID)
+}
+
+// GetReservation returns a reservation so callers can authorise access before
+// releasing/settling it.
+func (s *LedgerService) GetReservation(ctx context.Context, id uuid.UUID) (*domain.Reservation, error) {
+	return s.ledgerRepo.GetReservation(ctx, id)
 }

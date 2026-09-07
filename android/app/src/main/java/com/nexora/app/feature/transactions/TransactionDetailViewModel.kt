@@ -29,6 +29,12 @@ class TransactionDetailViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<TransactionDetailUiState>(TransactionDetailUiState.Loading)
     val uiState: StateFlow<TransactionDetailUiState> = _uiState.asStateFlow()
 
+    private val _noteSaving = MutableStateFlow(false)
+    val noteSaving: StateFlow<Boolean> = _noteSaving.asStateFlow()
+
+    private val _noteSaved = MutableStateFlow(false)
+    val noteSaved: StateFlow<Boolean> = _noteSaved.asStateFlow()
+
     init {
         loadTransaction()
     }
@@ -41,6 +47,27 @@ class TransactionDetailViewModel @Inject constructor(
                 _uiState.value = TransactionDetailUiState.Success(transaction)
             } catch (e: Exception) {
                 _uiState.value = TransactionDetailUiState.Error(e.message ?: "Network error occurred")
+            }
+        }
+    }
+
+    /** Saves the user's note on this transaction (empty string clears it). */
+    fun saveNote(note: String) {
+        if (transactionId.isBlank()) return
+        viewModelScope.launch {
+            _noteSaving.value = true
+            _noteSaved.value = false
+            try {
+                transferApi.updateNote(transactionId, com.nexora.app.core.network.api.NoteRequest(note))
+                val current = _uiState.value
+                if (current is TransactionDetailUiState.Success) {
+                    _uiState.value = current.copy(transaction = current.transaction.copy(note = note))
+                }
+                _noteSaved.value = true
+            } catch (e: Exception) {
+                _uiState.value = TransactionDetailUiState.Error(e.message ?: "Could not save note")
+            } finally {
+                _noteSaving.value = false
             }
         }
     }

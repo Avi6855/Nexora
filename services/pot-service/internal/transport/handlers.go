@@ -5,11 +5,11 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/gorilla/mux"
-	"github.com/rs/zerolog"
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	"github.com/nexora/nexora/services/pot-service/internal/domain"
 	"github.com/nexora/nexora/services/pot-service/internal/service"
+	"github.com/rs/zerolog"
 )
 
 type Handlers struct {
@@ -28,6 +28,7 @@ func (h *Handlers) RegisterRoutes(router *mux.Router) {
 	router.HandleFunc("/v1/pots/{id}/deposit", h.Deposit).Methods("POST")
 	router.HandleFunc("/v1/pots/{id}/withdraw", h.Withdraw).Methods("POST")
 	router.HandleFunc("/v1/pots/{id}/name", h.RenamePot).Methods("PUT")
+	router.HandleFunc("/v1/pots/{id}/roundup", h.SetRoundUp).Methods("PUT")
 	router.HandleFunc("/v1/pots/{id}", h.DeletePot).Methods("DELETE")
 }
 
@@ -118,7 +119,13 @@ func (h *Handlers) GetPot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pot, err := h.potService.GetPot(r.Context(), id)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	pot, err := h.potService.GetPotForUser(r.Context(), userID, id)
 	if err != nil {
 		if errors.Is(err, domain.ErrPotNotFound) {
 			respondError(w, http.StatusNotFound, err.Error())
@@ -158,6 +165,14 @@ func (h *Handlers) Deposit(w http.ResponseWriter, r *http.Request) {
 	if err := h.potService.Deposit(r.Context(), potID, userID, accountID, req.Amount, ""); err != nil {
 		if errors.Is(err, domain.ErrPotNotFound) {
 			respondError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrAccountNotOwned) {
+			respondError(w, http.StatusForbidden, "funding account does not belong to you")
+			return
+		}
+		if errors.Is(err, service.ErrInsufficientFunds) {
+			respondError(w, http.StatusPaymentRequired, "insufficient funds in the funding account")
 			return
 		}
 		if errors.Is(err, domain.ErrInvalidAmount) || errors.Is(err, domain.ErrPotClosed) {
@@ -200,15 +215,15 @@ func (h *Handlers) Withdraw(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusNotFound, err.Error())
 			return
 		}
-		if errors.Is(err, domain.ErrInvalidAmount) {
-			respondError(w, http.StatusBadRequest, err.Error())
+		if errors.Is(err, service.ErrAccountNotOwned) {
+			respondError(w, http.StatusForbidden, "destination account does not belong to you")
 			return
 		}
-		if errors.Is(err, domain.ErrInsufficientFunds) {
-			respondError(w, http.StatusConflict, err.Error())
+		if errors.Is(err, service.ErrInsufficientFunds) || errors.Is(err, domain.ErrInsufficientFunds) {
+			respondError(w, http.StatusPaymentRequired, "insufficient pot balance")
 			return
 		}
-		if errors.Is(err, domain.ErrPotClosed) {
+		if errors.Is(err, domain.ErrInvalidAmount) || errors.Is(err, domain.ErrPotClosed) {
 			respondError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -250,6 +265,44 @@ func (h *Handlers) RenamePot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, http.StatusOK, map[string]string{"message": "pot renamed"})
+}
+
+// SetRoundUp toggles automatic round-ups into one of the caller's pots.
+func (h *Handlers) SetRoundUp(w http.ResponseWriter, r *http.Request) {
+	potID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid pot ID")
+		return
+	}
+
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	pot, err := h.potService.SetRoundUp(r.Context(), potID, userID, req.Enabled)
+	if err != nil {
+		if errors.Is(err, domain.ErrPotNotFound) {
+			respondError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if errors.Is(err, domain.ErrPotClosed) {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, pot)
 }
 
 func (h *Handlers) DeletePot(w http.ResponseWriter, r *http.Request) {

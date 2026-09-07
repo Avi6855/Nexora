@@ -22,6 +22,10 @@ type mockRepository struct {
 	entries         map[uuid.UUID]*domain.LedgerEntry
 	accountEntries  map[uuid.UUID][]*domain.LedgerEntry
 	reservations    map[uuid.UUID]*domain.Reservation
+	bookedPayments  map[uuid.UUID]bool
+	notes           map[uuid.UUID]*domain.TransactionNote
+	guards          map[uuid.UUID]*domain.IntegrityGuard
+	integrityEvents []*domain.IntegrityEvent
 	nextEntryID     int64
 }
 
@@ -95,14 +99,21 @@ func (m *mockRepository) CreateEntryIfNotExists(ctx context.Context, entry *doma
 	return true, nil
 }
 
-func (m *mockRepository) GetEntriesByAccount(ctx context.Context, accountID uuid.UUID, limit int) ([]*domain.LedgerEntry, error) {
+func (m *mockRepository) GetEntriesByAccount(ctx context.Context, accountID uuid.UUID, filter domain.EntryFilter) ([]*domain.LedgerEntry, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	entries := m.accountEntries[accountID]
-	if len(entries) > limit {
-		entries = entries[:limit]
+	result := make([]*domain.LedgerEntry, 0, len(entries))
+	for _, e := range entries {
+		if !filter.Matches(e) {
+			continue
+		}
+		result = append(result, e)
+		if filter.Limit > 0 && len(result) >= filter.Limit {
+			break
+		}
 	}
-	return entries, nil
+	return result, nil
 }
 
 func (m *mockRepository) GetEntriesByTransaction(ctx context.Context, txID uuid.UUID) ([]*domain.LedgerEntry, error) {
@@ -221,10 +232,115 @@ func (m *mockRepository) SumActiveReservationAmounts(ctx context.Context, accoun
 	return total, nil
 }
 
+func (m *mockRepository) GetAccountOwner(ctx context.Context, accountID uuid.UUID) (uuid.UUID, error) {
+	return uuid.Nil, nil
+}
+
+func (m *mockRepository) UpsertNote(ctx context.Context, note *domain.TransactionNote) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.notes == nil {
+		m.notes = make(map[uuid.UUID]*domain.TransactionNote)
+	}
+	m.notes[note.EntryID] = note
+	return nil
+}
+
+func (m *mockRepository) GetNote(ctx context.Context, entryID uuid.UUID) (*domain.TransactionNote, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if n, ok := m.notes[entryID]; ok {
+		return n, nil
+	}
+	return nil, nil
+}
+
+func (m *mockRepository) GetEntryByID(ctx context.Context, entryID uuid.UUID) (*domain.LedgerEntry, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if e, ok := m.entries[entryID]; ok {
+		return e, nil
+	}
+	return nil, domain.ErrTransactionNotFound
+}
+
+// IsAccountLocked implements the lockdown probe; the mock reports no accounts
+// as locked unless a test sets a flag (not needed by current cases).
+func (m *mockRepository) IsAccountLocked(ctx context.Context, accountID uuid.UUID) (bool, error) {
+	return false, nil
+}
+
+func (m *mockRepository) MarkPaymentBooked(ctx context.Context, paymentID uuid.UUID, idempotencyKey, eventType string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.bookedPayments == nil {
+		m.bookedPayments = map[uuid.UUID]bool{}
+	}
+	if m.bookedPayments[paymentID] {
+		return false, nil
+	}
+	m.bookedPayments[paymentID] = true
+	return true, nil
+}
+
+// ── Ledger invariant monitor mocks ──
+func (m *mockRepository) ListEntryAccounts(ctx context.Context) ([]uuid.UUID, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	seen := map[uuid.UUID]bool{}
+	out := make([]uuid.UUID, 0)
+	for _, e := range m.entries {
+		if !seen[e.AccountID] {
+			seen[e.AccountID] = true
+			out = append(out, e.AccountID)
+		}
+	}
+	return out, nil
+}
+
+func (m *mockRepository) GetIntegrityGuard(ctx context.Context, accountID uuid.UUID) (*domain.IntegrityGuard, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.guards == nil {
+		return nil, nil
+	}
+	return m.guards[accountID], nil
+}
+
+func (m *mockRepository) SetIntegrityGuard(ctx context.Context, g *domain.IntegrityGuard) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.guards == nil {
+		m.guards = map[uuid.UUID]*domain.IntegrityGuard{}
+	}
+	m.guards[g.AccountID] = g
+	return nil
+}
+
+func (m *mockRepository) ClearIntegrityGuard(ctx context.Context, accountID uuid.UUID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.guards, accountID)
+	return nil
+}
+
+func (m *mockRepository) InsertIntegrityEvent(ctx context.Context, ev *domain.IntegrityEvent) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.integrityEvents = append(m.integrityEvents, ev)
+	return nil
+}
+
+func (m *mockRepository) ListIntegrityEvents(ctx context.Context, accountID uuid.UUID, limit int) ([]*domain.IntegrityEvent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.integrityEvents, nil
+}
+
 func newTestService() (*service.LedgerService, *mockRepository) {
 	repo := newMockRepository()
 	logger := zerolog.Nop()
-	svc := service.NewLedgerService(repo, logger)
+	svc := service.NewLedgerService(repo, nil, logger)
 	return svc, repo
 }
 
@@ -565,7 +681,7 @@ func TestInvalidTransitionFails(t *testing.T) {
 		t.Errorf("releasing already released reservation should return ErrReservationNotActive, got: %v", err)
 	}
 
-	err = svc.SettleReservation(ctx, res.ReservationID)
+	_, err = svc.SettleReservation(ctx, res.ReservationID)
 	if err != domain.ErrReservationNotActive {
 		t.Errorf("settling already released reservation should return ErrReservationNotActive, got: %v", err)
 	}
@@ -893,7 +1009,7 @@ func TestUnbalancedLinesRejected(t *testing.T) {
 		Lines: []domain.DoubleEntryLine{
 			{AccountID: uuid.New(), EntryType: domain.EntryTypeDebit, Amount: 1000, Currency: "GBP"},
 			{AccountID: uuid.New(), EntryType: domain.EntryTypeCredit, Amount: 500, Currency: "GBP"},
-			{AccountID: uuid.New(), EntryType: domain.EntryTypeCredit, Amount: 500, Currency: "GBP"},
+			{AccountID: uuid.New(), EntryType: domain.EntryTypeCredit, Amount: 400, Currency: "GBP"},
 		},
 	}
 
@@ -932,5 +1048,114 @@ func TestReleaseNonexistentReservationFails(t *testing.T) {
 	err := svc.ReleaseReservation(ctx, uuid.New())
 	if err != domain.ErrReservationNotFound {
 		t.Errorf("releasing nonexistent reservation should fail, got: %v", err)
+	}
+}
+
+func TestIntegrityMonitorFreezesOnViolationAndSelfHeals(t *testing.T) {
+	svc, repo := newTestService()
+	ctx := context.Background()
+
+	src := uuid.New() // funded account
+	clearing := uuid.New()
+	recipient := uuid.New()
+
+	// Fund src with a real double-entry booking.
+	if _, _, err := svc.CreateDoubleEntryTransaction(ctx, &domain.CreateDoubleEntryRequest{
+		DebitAccountID: clearing, CreditAccountID: src,
+		Amount: 100000, Currency: "GBP", Description: "opening balance",
+		IdempotencyKey: uuid.New().String(), TransactionType: domain.TransactionTypeTopUp,
+	}); err != nil {
+		t.Fatalf("funding failed: %v", err)
+	}
+
+	// Sanity: a clean account sweeps with no violation.
+	clean, err := svc.ScanAccountIntegrity(ctx, src)
+	if err != nil {
+		t.Fatalf("clean scan failed: %v", err)
+	}
+	if clean.Violation {
+		t.Fatalf("expected clean account to verify, got violation: %s", clean.Message)
+	}
+
+	// Corrupt the ledger: inflate the credit amount without touching balances.
+	repo.mu.Lock()
+	var credit *domain.LedgerEntry
+	for _, e := range repo.accountEntries[src] {
+		if e.EntryType == domain.EntryTypeCredit {
+			credit = e
+		}
+	}
+	repo.mu.Unlock()
+	if credit == nil {
+		t.Fatal("no credit entry found for src account")
+	}
+	credit.Amount = 110000
+
+	// The monitor sweep must detect the violation and freeze the account.
+	res, err := svc.ScanAccountIntegrity(ctx, src)
+	if err != nil {
+		t.Fatalf("scan failed: %v", err)
+	}
+	if !res.Violation {
+		t.Fatal("expected violation to be detected after tamper")
+	}
+	if !res.GuardApplied {
+		t.Fatal("expected integrity guard to be applied")
+	}
+	guard, err := repo.GetIntegrityGuard(ctx, src)
+	if err != nil || guard == nil || !guard.Frozen {
+		t.Fatalf("expected frozen guard, got %v (err %v)", guard, err)
+	}
+
+	// New money movement out of the frozen account must be refused.
+	_, _, err = svc.BookTransfer(ctx, &domain.TransferRequest{
+		SourceAccountID: src, DestinationAccountID: recipient,
+		Amount: 1000, Currency: "GBP", Description: "should be blocked",
+		IdempotencyKey: uuid.New().String(),
+	})
+	if err != domain.ErrAccountIntegrityViolation {
+		t.Fatalf("expected ErrAccountIntegrityViolation, got %v", err)
+	}
+	// New holds must be refused too.
+	if _, err := svc.ReserveFunds(ctx, src, 1000, uuid.New(), "GBP", time.Minute); err != domain.ErrAccountIntegrityViolation {
+		t.Fatalf("expected ErrAccountIntegrityViolation on reserve, got %v", err)
+	}
+
+	// Repair the entry: the next sweep self-heals the guard.
+	credit.Amount = 100000
+	res, err = svc.ScanAccountIntegrity(ctx, src)
+	if err != nil {
+		t.Fatalf("post-repair scan failed: %v", err)
+	}
+	if res.Violation {
+		t.Fatalf("expected account clean after repair, got: %s", res.Message)
+	}
+	guard, err = repo.GetIntegrityGuard(ctx, src)
+	if err != nil || guard != nil {
+		t.Fatalf("expected guard cleared after repair, got %v (err %v)", guard, err)
+	}
+
+	// Money movement works again.
+	if _, _, err := svc.BookTransfer(ctx, &domain.TransferRequest{
+		SourceAccountID: src, DestinationAccountID: recipient,
+		Amount: 1000, Currency: "GBP", Description: "after repair",
+		IdempotencyKey: uuid.New().String(),
+	}); err != nil {
+		t.Fatalf("transfer after repair failed: %v", err)
+	}
+}
+
+func TestIntegrityMonitorSweepAllAccounts(t *testing.T) {
+	svc, _ := newTestService()
+	ctx := context.Background()
+	summary, err := svc.ScanAllAccountsIntegrity(ctx)
+	if err != nil {
+		t.Fatalf("sweep failed: %v", err)
+	}
+	if summary == nil {
+		t.Fatal("expected sweep summary")
+	}
+	if summary.AccountsScanned < 0 {
+		t.Fatalf("negative accounts scanned: %d", summary.AccountsScanned)
 	}
 }

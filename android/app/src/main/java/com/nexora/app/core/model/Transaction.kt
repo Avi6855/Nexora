@@ -11,7 +11,8 @@ data class Transaction(
     @SerializedName("amount") val amount: Long = 0,
     @SerializedName("currency") val currency: String = "GBP",
     @SerializedName("description") val description: String = "",
-    val category: String = "",
+    @SerializedName("category") val category: String = "",
+    @SerializedName("note") val note: String = "",
     @SerializedName("correlation_id") val merchantName: String? = null,
     val merchantLogoUrl: String? = null,
     @SerializedName("balance_after") val balanceAfter: Long = 0,
@@ -23,4 +24,12 @@ data class Transaction(
     fun balanceAfterMoney() = Money(amount = balanceAfter, currency = currency)
     val isCredit: Boolean get() = type == "CREDIT" || direction == "CREDIT"
     val isDebit: Boolean get() = !isCredit
+    /** Display name: backend category enum ("EATING_OUT") or a friendly fallback. */
+    val displayCategory: String
+        get() = when {
+            category.isNotBlank() -> category.lowercase().replace('_', ' ')
+                .replaceFirstChar { it.uppercase() }
+            !description.isBlank() -> "Other"
+            else -> "Transfer"
+        }
 }

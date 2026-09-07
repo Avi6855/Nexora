@@ -2,6 +2,7 @@ package transport
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -27,9 +28,14 @@ func NewHandlers(paymentService *service.PaymentService, logger zerolog.Logger) 
 
 func (h *Handlers) RegisterRoutes(router *mux.Router) {
 	router.HandleFunc("/v1/payments", h.CreatePayment).Methods("POST")
+	router.HandleFunc("/v1/payments", h.GetPayments).Methods("GET")
 	router.HandleFunc("/v1/payments/{id}", h.GetPayment).Methods("GET")
+	router.HandleFunc("/v1/payments/{id}/authorize", h.AuthorizePayment).Methods("POST")
 	router.HandleFunc("/v1/payments/{id}/cancel", h.CancelPayment).Methods("POST")
 	router.HandleFunc("/v1/payments/{id}/process", h.ProcessPayment).Methods("POST")
+	router.HandleFunc("/v1/payments/{id}/reverse", h.ReversePayment).Methods("POST")
+	router.HandleFunc("/v1/payments/{id}/fail", h.FailPayment).Methods("POST")
+	router.HandleFunc("/v1/payments/{id}/timeout", h.HandleTimeout).Methods("POST")
 	router.HandleFunc("/v1/accounts/{id}/payments", h.GetAccountPayments).Methods("GET")
 	router.HandleFunc("/v1/webhooks/provider", h.HandleProviderWebhook).Methods("POST")
 }
@@ -42,6 +48,33 @@ func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 
 func respondError(w http.ResponseWriter, status int, message string) {
 	respondJSON(w, status, domain.ErrorResponse{Error: message})
+}
+
+// canAccessPayment decides whether a caller may read/act on a payment. Internal
+// service calls pass through; users only reach their own payments (legacy rows
+// without a user claim are treated as pre-auth demo data).
+func canAccessPayment(p *domain.Payment, r *http.Request) bool {
+	if r.Header.Get("X-Internal-Token") != "" {
+		return true
+	}
+	caller, err := uuid.Parse(r.Header.Get("X-User-ID"))
+	if err != nil {
+		return false
+	}
+	return p.UserID == uuid.Nil || p.UserID == caller
+}
+
+func (h *Handlers) requireOwnPayment(w http.ResponseWriter, r *http.Request, id uuid.UUID) bool {
+	p, err := h.paymentService.GetPayment(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return false
+	}
+	if !canAccessPayment(p, r) {
+		respondError(w, http.StatusForbidden, "you can only access your own payments")
+		return false
+	}
+	return true
 }
 
 func (h *Handlers) CreatePayment(w http.ResponseWriter, r *http.Request) {
@@ -70,12 +103,27 @@ func (h *Handlers) CreatePayment(w http.ResponseWriter, r *http.Request) {
 		req.PaymentType = domain.PaymentTypeCard
 	}
 
+	// Authenticated caller identity comes from the gateway (X-User-ID),
+	// mirroring the other services; the body field is accepted as a fallback.
+	if req.UserID == "" {
+		req.UserID = r.Header.Get("X-User-ID")
+	}
+
 	if req.Currency == "" {
 		req.Currency = "GBP"
 	}
 
 	payment, err := h.paymentService.CreatePayment(r.Context(), &req)
 	if err != nil {
+		// Risk-engine refusals surface as 403 with the reasons so the app can
+		// show the Monzo-style "we stopped this payment" warning.
+		if errors.Is(err, domain.ErrBlockedByRisk) {
+			respondJSON(w, http.StatusForbidden, domain.ErrorResponse{
+				Error:   "blocked_by_risk_engine",
+				Message: err.Error(),
+			})
+			return
+		}
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -96,6 +144,10 @@ func (h *Handlers) GetPayment(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	if !canAccessPayment(payment, r) {
+		respondError(w, http.StatusForbidden, "you can only access your own payments")
+		return
+	}
 
 	respondJSON(w, http.StatusOK, payment)
 }
@@ -114,11 +166,113 @@ func (h *Handlers) GetAccountPayments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	owned := make([]*domain.Payment, 0, len(payments))
+	for _, p := range payments {
+		if canAccessPayment(p, r) {
+			owned = append(owned, p)
+		}
+	}
+
+	respondJSON(w, http.StatusOK, owned)
+}
+
+// GetPayments returns the caller's own payments (real rows, newest first is
+// handled client-side).
+func (h *Handlers) GetPayments(w http.ResponseWriter, r *http.Request) {
+	caller, err := uuid.Parse(r.Header.Get("X-User-ID"))
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	payments, err := h.paymentService.GetPaymentsByUser(r.Context(), caller)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	if payments == nil {
 		payments = make([]*domain.Payment, 0)
 	}
-
 	respondJSON(w, http.StatusOK, payments)
+}
+
+func (h *Handlers) AuthorizePayment(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["id"])
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid payment ID")
+		return
+	}
+	if !h.requireOwnPayment(w, r, id) {
+		return
+	}
+
+	payment, err := h.paymentService.AuthorizePayment(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, payment)
+}
+
+func (h *Handlers) ReversePayment(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["id"])
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid payment ID")
+		return
+	}
+	if !h.requireOwnPayment(w, r, id) {
+		return
+	}
+
+	if err := h.paymentService.ReversePayment(r.Context(), id); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "reversed"})
+}
+
+func (h *Handlers) FailPayment(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["id"])
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid payment ID")
+		return
+	}
+
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req.Reason = "manually failed via API"
+	}
+
+	if err := h.paymentService.FailPayment(r.Context(), id, req.Reason); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "failed"})
+}
+
+func (h *Handlers) HandleTimeout(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["id"])
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid payment ID")
+		return
+	}
+
+	payment, err := h.paymentService.HandleTimeout(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, payment)
 }
 
 func (h *Handlers) CancelPayment(w http.ResponseWriter, r *http.Request) {
@@ -126,6 +280,9 @@ func (h *Handlers) CancelPayment(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(vars["id"])
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid payment ID")
+		return
+	}
+	if !h.requireOwnPayment(w, r, id) {
 		return
 	}
 

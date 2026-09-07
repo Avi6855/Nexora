@@ -61,9 +61,11 @@ fun HomeScreen(
     onNavigateToAccount: (String) -> Unit,
     onNavigateToTransaction: (String) -> Unit,
     onNavigateToNotifications: () -> Unit,
+    onNavigateToInsights: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val liveEvent by viewModel.liveEvent.collectAsState()
     var isRefreshing by remember { mutableStateOf(false) }
     var dataLoaded by remember { mutableStateOf(false) }
 
@@ -128,17 +130,42 @@ fun HomeScreen(
                         }
                     }
 
+                    // Live "money just moved" banner, driven by the SSE stream.
+                    if (liveEvent != null) {
+                        item {
+                            LiveEventBanner(
+                                event = liveEvent!!,  // checked above
+                                onDismiss = { viewModel.consumeLiveEvent() }
+                            )
+                        }
+                    }
+
                     item {
                         AnimatedVisibility(
                             visible = dataLoaded,
                             enter = fadeIn() + slideInVertically()
                         ) {
-                            BalanceCard(
-                                totalBalance = state.totalBalance,
-                                availableBalance = state.availableBalance,
-                                pendingBalance = state.pendingBalance,
-                                reservedBalance = state.reservedBalance
-                            )
+                            Column {
+                                BalanceCard(
+                                    totalBalance = state.totalBalance,
+                                    availableBalance = state.availableBalance,
+                                    pendingBalance = state.pendingBalance,
+                                    reservedBalance = state.reservedBalance
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                SafeToSpendStrip(
+                                    available = state.availableBalance,
+                                    onOpenInsights = onNavigateToInsights
+                                )
+                                state.runway?.let { runway ->
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    RunwayStrip(
+                                        runwayMonths = runway.runwayMonthsTotal,
+                                        essentialsMonths = runway.runwayMonthsEssentials,
+                                        verdict = runway.verdict
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -253,6 +280,123 @@ fun HomeScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * RunwayStrip is the "what if?" teaser: how long today's balance would cover
+ * your spending if income stopped tomorrow (essentials-only vs everything).
+ */
+@Composable
+private fun RunwayStrip(runwayMonths: Double, essentialsMonths: Double, verdict: String) {
+    NexoraCard {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("🛟", style = MaterialTheme.typography.headlineSmall)
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Financial runway",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "%.1f months of coverage".format(essentialsMonths) +
+                        " · %.1f all-in".format(runwayMonths),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    verdict,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/**
+ * SafeToSpendStrip teases the Financial Intelligence Platform from Home:
+ * what's genuinely spendable vs reserved/pending, tapping through to the
+ * full Insights screen.
+ */
+@Composable
+private fun SafeToSpendStrip(available: Long, onOpenInsights: () -> Unit) {
+    NexoraCard(
+        modifier = Modifier.clickable { onOpenInsights() }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("🧠", style = MaterialTheme.typography.headlineSmall)
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Safe to spend",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    available.formatCurrency(),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                "See insights →",
+                style = MaterialTheme.typography.labelMedium,
+                color = NexoraPrimary,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun LiveEventBanner(event: com.nexora.app.core.realtime.RealtimeEvent, onDismiss: () -> Unit) {
+    NexoraCard(
+        modifier = Modifier.clickable { onDismiss() }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "⚡",
+                style = MaterialTheme.typography.headlineSmall
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = event.title.ifEmpty { "Live update" },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (event.body.isNotBlank()) {
+                    Text(
+                        text = event.body,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Text(
+                text = "LIVE",
+                style = MaterialTheme.typography.labelSmall,
+                color = NexoraPrimary,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -428,15 +572,13 @@ private fun TransactionItem(
                 .clip(CircleShape)
                 .background(
                     if (transaction.isCredit) MaterialTheme.colorScheme.primaryContainer
-                    else MaterialTheme.colorScheme.errorContainer
+                    else MaterialTheme.colorScheme.surfaceVariant
                 ),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = if (transaction.isCredit) "+" else "-",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = if (transaction.isCredit) NexoraPrimary else MaterialTheme.colorScheme.error
+                text = com.nexora.app.core.design.component.CategoryIcons.emojiFor(transaction.category),
+                style = MaterialTheme.typography.titleLarge
             )
         }
         Column(modifier = Modifier.weight(1f)) {
@@ -446,7 +588,7 @@ private fun TransactionItem(
                 fontWeight = FontWeight.Medium
             )
             Text(
-                text = transaction.category.ifEmpty { "Transfer" },
+                text = com.nexora.app.core.design.component.CategoryIcons.labelFor(transaction.category),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

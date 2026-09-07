@@ -26,8 +26,8 @@ func NewCassandraAccountRepository(session *gocql.Session) AccountRepository {
 }
 
 func (r *cassandraAccountRepository) Create(ctx context.Context, account *domain.Account) error {
-	query := `INSERT INTO accounts (account_id, user_id, account_type, currency, available_balance, current_balance, reserved_balance, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO accounts (account_id, user_id, account_type, currency, available_balance, current_balance, reserved_balance, status, lockdown_enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	return r.session.Query(query,
 		gocql.UUID(account.AccountID),
@@ -38,6 +38,7 @@ func (r *cassandraAccountRepository) Create(ctx context.Context, account *domain
 		account.CurrentBalance.Amount,
 		account.ReservedBalance.Amount,
 		string(account.Status),
+		account.LockdownEnabled,
 		account.CreatedAt,
 		account.UpdatedAt,
 	).WithContext(ctx).Exec()
@@ -48,8 +49,9 @@ func (r *cassandraAccountRepository) GetByID(ctx context.Context, id uuid.UUID) 
 	var accountID, userID gocql.UUID
 	var accountType, status string
 	var avail, cur, res int64
+	var lockdown bool
 
-	query := `SELECT account_id, user_id, account_type, currency, available_balance, current_balance, reserved_balance, status, created_at, updated_at
+	query := `SELECT account_id, user_id, account_type, currency, available_balance, current_balance, reserved_balance, status, lockdown_enabled, created_at, updated_at
 		FROM accounts WHERE account_id = ?`
 
 	err := r.session.Query(query, gocql.UUID(id)).WithContext(ctx).Scan(
@@ -61,6 +63,7 @@ func (r *cassandraAccountRepository) GetByID(ctx context.Context, id uuid.UUID) 
 		&cur,
 		&res,
 		&status,
+		&lockdown,
 		&account.CreatedAt,
 		&account.UpdatedAt,
 	)
@@ -76,6 +79,7 @@ func (r *cassandraAccountRepository) GetByID(ctx context.Context, id uuid.UUID) 
 	account.UserID = uuid.UUID(userID)
 	account.AccountType = domain.AccountType(accountType)
 	account.Status = domain.AccountStatus(status)
+	account.LockdownEnabled = lockdown
 	account.AvailableBalance.Amount = avail
 	account.AvailableBalance.Currency = account.Currency
 	account.CurrentBalance.Amount = cur
@@ -89,7 +93,7 @@ func (r *cassandraAccountRepository) GetByID(ctx context.Context, id uuid.UUID) 
 func (r *cassandraAccountRepository) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*domain.Account, error) {
 	accounts := make([]*domain.Account, 0)
 
-	query := `SELECT account_id, user_id, account_type, currency, available_balance, current_balance, reserved_balance, status, created_at, updated_at
+	query := `SELECT account_id, user_id, account_type, currency, available_balance, current_balance, reserved_balance, status, lockdown_enabled, created_at, updated_at
 		FROM accounts WHERE user_id = ? ALLOW FILTERING`
 
 	iter := r.session.Query(query, gocql.UUID(userID)).WithContext(ctx).Iter()
@@ -98,6 +102,7 @@ func (r *cassandraAccountRepository) GetByUserID(ctx context.Context, userID uui
 	var accountID, userIDCol gocql.UUID
 	var accountType, currency, status string
 	var avail, cur, res int64
+	var lockdown bool
 	var createdAt, updatedAt time.Time
 
 	for iter.Scan(
@@ -109,15 +114,17 @@ func (r *cassandraAccountRepository) GetByUserID(ctx context.Context, userID uui
 		&cur,
 		&res,
 		&status,
+		&lockdown,
 		&createdAt,
 		&updatedAt,
 	) {
 		account := &domain.Account{
-			AccountID: uuid.UUID(accountID),
-			UserID:    uuid.UUID(userIDCol),
-			Currency:  currency,
-			CreatedAt: createdAt,
-			UpdatedAt: updatedAt,
+			AccountID:       uuid.UUID(accountID),
+			UserID:          uuid.UUID(userIDCol),
+			Currency:        currency,
+			LockdownEnabled: lockdown,
+			CreatedAt:       createdAt,
+			UpdatedAt:       updatedAt,
 		}
 		account.AccountType = domain.AccountType(accountType)
 		account.Status = domain.AccountStatus(status)
@@ -138,7 +145,7 @@ func (r *cassandraAccountRepository) GetByUserID(ctx context.Context, userID uui
 }
 
 func (r *cassandraAccountRepository) Update(ctx context.Context, account *domain.Account) error {
-	query := `UPDATE accounts SET available_balance = ?, current_balance = ?, reserved_balance = ?, status = ?, updated_at = ?
+	query := `UPDATE accounts SET available_balance = ?, current_balance = ?, reserved_balance = ?, status = ?, lockdown_enabled = ?, updated_at = ?
 		WHERE account_id = ?`
 
 	return r.session.Query(query,
@@ -146,6 +153,7 @@ func (r *cassandraAccountRepository) Update(ctx context.Context, account *domain
 		account.CurrentBalance.Amount,
 		account.ReservedBalance.Amount,
 		string(account.Status),
+		account.LockdownEnabled,
 		account.UpdatedAt,
 		gocql.UUID(account.AccountID),
 	).WithContext(ctx).Exec()

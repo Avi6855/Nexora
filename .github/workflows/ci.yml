@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  GO_VERSION: '1.22'
+  GO_VERSION: '1.25'
   JAVA_VERSION: '17'
 
 jobs:
@@ -38,8 +38,14 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
       - name: Run unit tests
         run: go test -v -race ./tests/unit/...
-      - name: Run financial invariant tests
-        run: go test -v -race ./tests/financial/...
+      - name: Run ledger service tests (integration + financial invariants)
+        working-directory: services/ledger-service
+        run: go test -v -race ./tests/...
+      - name: Run payment service tests
+        working-directory: services/payment-service
+        run: go test -v -race ./tests/...
+      - name: Run contract tests
+        run: go test -v -race ./tests/contract/...
 
   go-build:
     name: Go Build

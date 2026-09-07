@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+**Superseded by ADR-021.** The polling design below was the first iteration;
+the implemented surface is an event-driven push model (Kafka consumers +
+Server-Sent Events) — see ADR-021.
 
 ## Context
 

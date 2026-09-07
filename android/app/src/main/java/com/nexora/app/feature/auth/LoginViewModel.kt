@@ -17,6 +17,8 @@ sealed class LoginUiState {
     data object Loading : LoginUiState()
     data class Success(val email: String) : LoginUiState()
     data class Error(val message: String) : LoginUiState()
+    /** A stored session exists and the user just unlocked it with biometrics. */
+    data object UnlockedWithBiometrics : LoginUiState()
 }
 
 @HiltViewModel
@@ -24,6 +26,10 @@ class LoginViewModel @Inject constructor(
     private val authApi: AuthApi,
     private val tokenStorage: SecureTokenStorage
 ) : ViewModel() {
+
+    /** True when there is a saved session the fingerprint button can unlock. */
+    val hasSavedSession: Boolean
+        get() = tokenStorage.isLoggedIn() && !tokenStorage.getAccessToken().isNullOrBlank()
 
     private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
@@ -36,6 +42,12 @@ class LoginViewModel @Inject constructor(
 
     fun onEmailChange(value: String) { _email.value = value }
     fun onPasswordChange(value: String) { _password.value = value }
+
+    /** Called after a successful biometric unlock of the stored session. */
+    fun onBiometricUnlock() {
+        val email = tokenStorage.getUserEmail().orEmpty()
+        _uiState.value = LoginUiState.UnlockedWithBiometrics
+    }
 
     fun login() {
         if (_email.value.isBlank() || _password.value.isBlank()) {

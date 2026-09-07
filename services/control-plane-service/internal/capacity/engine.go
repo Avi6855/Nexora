@@ -257,7 +257,7 @@ func (e *CapacityEngine) Recommend() []ScalingRecommendation {
 	e.recommendations = make([]ScalingRecommendation, 0)
 	e.mu.Unlock()
 
-	metrics := e.CollectMetrics()
+	metrics, _ := e.CollectMetrics()
 
 	e.mu.Lock()
 	for _, m := range metrics {

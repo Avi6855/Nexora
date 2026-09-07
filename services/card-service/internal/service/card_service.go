@@ -134,6 +134,40 @@ func (s *CardService) UpdateSpendingLimits(ctx context.Context, id uuid.UUID, da
 	return nil
 }
 
+// UpdateChannelControls applies the user's spending toggles (online/ATM/
+// gambling block) to one of their own cards. Ownership is enforced here and
+// again by the auth middleware, never trusted from the request.
+func (s *CardService) UpdateChannelControls(ctx context.Context, id, userID uuid.UUID, online, atm, gamblingBlock *bool) (*domain.Card, error) {
+	card, err := s.cardRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if card.UserID != userID {
+		return nil, domain.ErrCardNotFound // do not reveal other users' cards
+	}
+
+	card.UpdateChannelControls(online, atm, gamblingBlock)
+
+	if err := s.cardRepo.Update(ctx, card); err != nil {
+		return nil, fmt.Errorf("persisting card controls update: %w", err)
+	}
+
+	_ = s.publisher.PublishCardEvent(ctx, events.EventTypeCardUpdated, card, card.CardID.String(), "")
+	return card, nil
+}
+
+// GetCardForUser returns a card only when it belongs to the caller.
+func (s *CardService) GetCardForUser(ctx context.Context, id, userID uuid.UUID) (*domain.Card, error) {
+	card, err := s.cardRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if card.UserID != userID {
+		return nil, domain.ErrCardNotFound
+	}
+	return card, nil
+}
+
 func generateLast4() string {
 	return fmt.Sprintf("%04d", time.Now().UnixNano()%10000)
 }

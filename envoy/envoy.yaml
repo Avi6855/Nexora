@@ -22,33 +22,11 @@ static_resources:
                   - name: envoy.filters.http.cors
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
-                  - name: envoy.filters.http.jwt_authn
-                    typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
-                      providers:
-                        nexora_jwt:
-                          issuer: nexora
-                          audiences:
-                            - nexora-api
-                          remote_jwks:
-                            http_uri:
-                              uri: http://identity-service:8081/.well-known/jwks.json
-                              cluster: identity_service
-                              timeout: 5s
-                      rules:
-                        - match:
-                            prefix: /v1/auth/verify
-                          requires:
-                            provider_and_audiences:
-                              provider_name: nexora_jwt
-                              audiences:
-                                - nexora-api
-                        - match:
-                            prefix: /v1/auth
-                          requires: {}
-                        - match:
-                            prefix: /v1/health
-                          requires: {}
+                  # Authentication is enforced at each service ORIGIN by the
+                  # shared/auth middleware (shared JWT secret + internal
+                  # service token). The edge routes + terminates; it does not
+                  # duplicate token verification so the crypto provider stays
+                  # in one place and direct-port calls are equally protected.
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -137,6 +115,40 @@ static_resources:
                             cluster: notification_service
                             timeout: 30s
 
+                        # ── Realtime (SSE stream + feed) ──
+                        - match:
+                            prefix: /v1/stream
+                          route:
+                            cluster: notification_service
+                            timeout: 0s
+                            idle_timeout: 0s
+                        - match:
+                            prefix: /v1/feed
+                          route:
+                            cluster: notification_service
+                            timeout: 30s
+
+                        # ── Insights (Financial Intelligence Platform) ──
+                        - match:
+                            prefix: /v1/insights
+                          route:
+                            cluster: insights_service
+                            timeout: 30s
+
+                        # ── Disputes (chargeback orchestration) ──
+                        - match:
+                            prefix: /v1/disputes
+                          route:
+                            cluster: dispute_service
+                            timeout: 30s
+
+                        # ── Delegated access + consent ──
+                        - match:
+                            prefix: /v1/consent
+                          route:
+                            cluster: consent_service
+                            timeout: 30s
+
                         # ── Security / Control Plane ──
                         - match:
                             prefix: /v1/security
@@ -192,6 +204,13 @@ static_resources:
                           route:
                             cluster: control_plane_service
                             timeout: 5s
+
+                        # ── Control plane (dependency health graph + throttle) ──
+                        - match:
+                            prefix: /v1/control
+                          route:
+                            cluster: control_plane_service
+                            timeout: 10s
 
                         # ── Default 404 ──
                         - match:
@@ -457,6 +476,84 @@ static_resources:
           - max_connections: 1024
             max_pending_requests: 512
             max_requests: 1024
+            max_retries: 3
+
+    - name: insights_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: insights_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: insights-service
+                      port_value: 8099
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 512
+            max_pending_requests: 256
+            max_requests: 512
+            max_retries: 3
+
+    - name: dispute_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: dispute_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: dispute-service
+                      port_value: 8098
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 512
+            max_pending_requests: 256
+            max_requests: 512
+            max_retries: 3
+
+    - name: consent_service
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: consent_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: consent-service
+                      port_value: 8097
+      health_checks:
+        - timeout: 5s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /health
+      circuit_breakers:
+        thresholds:
+          - max_connections: 512
+            max_pending_requests: 256
+            max_requests: 512
             max_retries: 3
 
     - name: control_plane_service

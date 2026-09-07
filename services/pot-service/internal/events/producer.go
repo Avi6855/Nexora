@@ -20,6 +20,7 @@ const (
 	EventTypePotRenamed  EventType = "pot.renamed"
 	EventTypePotClosed   EventType = "pot.closed"
 	EventTypePotDeleted  EventType = "pot.deleted"
+	EventTypePotUpdated  EventType = "pot.updated"
 )
 
 type PotEventEnvelope struct {

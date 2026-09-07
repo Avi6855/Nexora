@@ -12,28 +12,28 @@ import (
 type Severity string
 
 const (
-	SeverityHealthy   Severity = "HEALTHY"
-	SeverityDegraded  Severity = "DEGRADED"
-	SeverityCritical  Severity = "CRITICAL"
+	SeverityHealthy  Severity = "HEALTHY"
+	SeverityDegraded Severity = "DEGRADED"
+	SeverityCritical Severity = "CRITICAL"
 )
 
 type RecoveryAction string
 
 const (
-	ActionPauseRetries    RecoveryAction = "PAUSE_RETRIES"
-	ActionReduceLoad      RecoveryAction = "REDUCE_LOAD"
+	ActionPauseRetries     RecoveryAction = "PAUSE_RETRIES"
+	ActionReduceLoad       RecoveryAction = "REDUCE_LOAD"
 	ActionQueueNonCritical RecoveryAction = "QUEUE_NON_CRITICAL"
 	ActionResumeOperations RecoveryAction = "RESUME_OPERATIONS"
-	ActionCircuitBreak    RecoveryAction = "CIRCUIT_BREAK"
-	ActionRateLimit       RecoveryAction = "RATE_LIMIT"
+	ActionCircuitBreak     RecoveryAction = "CIRCUIT_BREAK"
+	ActionRateLimit        RecoveryAction = "RATE_LIMIT"
 )
 
 type FailureDetection struct {
-	Service     string    `json:"service"`
-	ErrorRate   float64   `json:"error_rate"`
-	LatencyP99  float64   `json:"latency_p99"`
-	Severity    Severity  `json:"severity"`
-	DetectedAt  time.Time `json:"detected_at"`
+	Service    string    `json:"service"`
+	ErrorRate  float64   `json:"error_rate"`
+	LatencyP99 float64   `json:"latency_p99"`
+	Severity   Severity  `json:"severity"`
+	DetectedAt time.Time `json:"detected_at"`
 }
 
 type RecoveryEvent struct {
@@ -55,27 +55,27 @@ type LoadShedder interface {
 }
 
 type RecoveryController struct {
-	healthChecker  HealthChecker
-	loadShedder    LoadShedder
-	logger         zerolog.Logger
-	auditLog       []RecoveryEvent
-	serviceStates  map[string]*ServiceState
-	mu             sync.RWMutex
- thresholds     *Thresholds
+	healthChecker HealthChecker
+	loadShedder   LoadShedder
+	logger        zerolog.Logger
+	auditLog      []RecoveryEvent
+	serviceStates map[string]*ServiceState
+	mu            sync.RWMutex
+	thresholds    *Thresholds
 }
 
 type Thresholds struct {
-	ErrorRateDegraded  float64
-	ErrorRateCritical  float64
-	LatencyDegradedMs  float64
+	ErrorRateDegraded float64
+	ErrorRateCritical float64
+	LatencyDegradedMs float64
 	LatencyCriticalMs float64
 }
 
 func DefaultThresholds() *Thresholds {
 	return &Thresholds{
-		ErrorRateDegraded:  0.05,
-		ErrorRateCritical:  0.20,
-		LatencyDegradedMs:  500,
+		ErrorRateDegraded: 0.05,
+		ErrorRateCritical: 0.20,
+		LatencyDegradedMs: 500,
 		LatencyCriticalMs: 2000,
 	}
 }
@@ -232,14 +232,29 @@ func (rc *RecoveryController) Recover(ctx context.Context, service string) error
 		return nil
 	}
 
+	// Collect the audits inside the lock; recordAudit takes the same mutex,
+	// so it must never be called while rc.mu is held (Go mutexes are not
+	// reentrant — this previously deadlocked the recovery path).
+	var audits []RecoveryEvent
+	audit := func(action RecoveryAction, message string) {
+		audits = append(audits, RecoveryEvent{
+			ID:        fmt.Sprintf("recovery-%s-%d", service, time.Now().UnixNano()),
+			Service:   service,
+			Action:    action,
+			Severity:  SeverityHealthy,
+			Message:   message,
+			Timestamp: time.Now().UTC(),
+		})
+	}
+
 	if state.PausedRetries {
 		state.PausedRetries = false
-		rc.recordAudit(service, ActionResumeOperations, SeverityHealthy, "resuming retries")
+		audit(ActionResumeOperations, "resuming retries")
 	}
 
 	if state.CircuitBroken {
 		state.CircuitBroken = false
-		rc.recordAudit(service, ActionResumeOperations, SeverityHealthy, "opening circuit breaker")
+		audit(ActionResumeOperations, "opening circuit breaker")
 	}
 
 	if state.LoadReduced {
@@ -248,12 +263,25 @@ func (rc *RecoveryController) Recover(ctx context.Context, service string) error
 			rc.loadShedder.QueueNonCritical(service, false)
 		}
 		state.LoadReduced = false
-		rc.recordAudit(service, ActionResumeOperations, SeverityHealthy, "restoring full load")
+		audit(ActionResumeOperations, "restoring full load")
 	}
 
 	state.Severity = SeverityHealthy
 	state.RecoveryAttempts++
 	rc.mu.Unlock()
+
+	if len(audits) > 0 {
+		rc.mu.Lock()
+		rc.auditLog = append(rc.auditLog, audits...)
+		rc.mu.Unlock()
+		for _, ev := range audits {
+			rc.logger.Info().
+				Str("service", ev.Service).
+				Str("action", string(ev.Action)).
+				Str("severity", string(ev.Severity)).
+				Msg(ev.Message)
+		}
+	}
 
 	rc.logger.Info().
 		Str("service", service).
@@ -328,16 +356,16 @@ func (rc *RecoveryController) recordAudit(service string, action RecoveryAction,
 }
 
 type ServiceState struct {
-	Service          string        `json:"service"`
-	Severity         Severity      `json:"severity"`
-	LastErrorRate    float64       `json:"last_error_rate"`
-	LastLatency      float64       `json:"last_latency"`
-	LastCheckedAt    time.Time     `json:"last_checked_at"`
-	RecoveryAttempts int           `json:"recovery_attempts"`
-	PausedRetries    bool          `json:"paused_retries"`
-	LoadReduced      bool          `json:"load_reduced"`
-	CircuitBroken    bool          `json:"circuit_broken"`
-	CreatedAt        time.Time     `json:"created_at"`
+	Service          string    `json:"service"`
+	Severity         Severity  `json:"severity"`
+	LastErrorRate    float64   `json:"last_error_rate"`
+	LastLatency      float64   `json:"last_latency"`
+	LastCheckedAt    time.Time `json:"last_checked_at"`
+	RecoveryAttempts int       `json:"recovery_attempts"`
+	PausedRetries    bool      `json:"paused_retries"`
+	LoadReduced      bool      `json:"load_reduced"`
+	CircuitBroken    bool      `json:"circuit_broken"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 type SimpleHealthChecker struct{}
@@ -351,9 +379,9 @@ func (h *SimpleHealthChecker) IsHealthy(ctx context.Context, service string) (bo
 }
 
 type SimpleLoadShedder struct {
-	mu            sync.RWMutex
-	rateLimits    map[string]float64
-	queueNonCrit  map[string]bool
+	mu           sync.RWMutex
+	rateLimits   map[string]float64
+	queueNonCrit map[string]bool
 }
 
 func NewSimpleLoadShedder() *SimpleLoadShedder {

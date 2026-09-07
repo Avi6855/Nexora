@@ -19,6 +19,14 @@ const (
 	EventTypeCardUnfrozen EventType = "card.unfrozen"
 	EventTypeCardBlocked  EventType = "card.blocked"
 	EventTypeCardUpdated  EventType = "card.updated"
+
+	// Real-time authorisation lifecycle events. Payload is a flat
+	// AuthorizationEvent (see authorization_event.go) so any consumer can
+	// build push notifications / feed items without unwrapping an envelope.
+	EventTypeAuthApproved EventType = "card.authorization.approved"
+	EventTypeAuthDeclined EventType = "card.authorization.declined"
+	EventTypeAuthCaptured EventType = "card.authorization.captured"
+	EventTypeAuthVoided   EventType = "card.authorization.voided"
 )
 
 type CardEventEnvelope struct {
@@ -156,6 +164,42 @@ func (p *KafkaEventPublisher) PublishCardEvent(ctx context.Context, eventType Ev
 			Str("aggregate_id", aggregateID).
 			Str("topic", topic).
 			Msg("card event queued")
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// PublishAuthorizationEvent sends a real-time authorization lifecycle event to
+// the per-type topic (nexora.card.authorization.*). The value is the flat
+// AuthorizationEvent payload; headers carry event_type + timestamp.
+func (p *KafkaEventPublisher) PublishAuthorizationEvent(ctx context.Context, eventType EventType, ev *AuthorizationEvent) error {
+	data, err := json.Marshal(ev)
+	if err != nil {
+		return fmt.Errorf("marshaling authorization event: %w", err)
+	}
+
+	topic := fmt.Sprintf("%s.%s", p.topicPrefix, string(eventType))
+
+	if p.producer == nil {
+		p.logger.Warn().Str("event_type", string(eventType)).Str("authorization_id", ev.AuthorizationID).Msg("kafka unavailable, authorization event not published")
+		return nil
+	}
+
+	msg := &sarama.ProducerMessage{
+		Topic: topic,
+		Key:   sarama.StringEncoder(ev.UserID),
+		Value: sarama.ByteEncoder(data),
+		Headers: []sarama.RecordHeader{
+			{Key: []byte("event_type"), Value: []byte(string(eventType))},
+			{Key: []byte("event_id"), Value: []byte(ev.AuthorizationID)},
+			{Key: []byte("timestamp"), Value: []byte(time.Now().UTC().Format(time.RFC3339))},
+		},
+	}
+
+	select {
+	case p.producer.Input() <- msg:
+		p.logger.Info().Str("event_type", string(eventType)).Str("authorization_id", ev.AuthorizationID).Str("topic", topic).Msg("authorization event queued")
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()

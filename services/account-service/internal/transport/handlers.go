@@ -28,6 +28,7 @@ func (h *Handlers) RegisterRoutes(router *mux.Router) {
 	router.HandleFunc("/v1/accounts", h.GetAccounts).Methods("GET")
 	router.HandleFunc("/v1/accounts/{id}", h.GetAccount).Methods("GET")
 	router.HandleFunc("/v1/accounts/{id}/balance", h.GetBalance).Methods("GET")
+	router.HandleFunc("/v1/accounts/{id}/lockdown", h.SetLockdown).Methods("PUT", "POST")
 }
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -98,6 +99,17 @@ func (h *Handlers) GetAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ownership: the account may only be read by its owner (or an internal
+	// service carrying the internal token). X-User-ID is set by the auth
+	// middleware from the verified JWT subject.
+	if r.Header.Get("X-Internal-Token") == "" {
+		caller, perr := uuid.Parse(r.Header.Get("X-User-ID"))
+		if perr != nil || caller != account.UserID {
+			respondError(w, http.StatusForbidden, "you can only access your own accounts")
+			return
+		}
+	}
+
 	respondJSON(w, http.StatusOK, account)
 }
 
@@ -107,6 +119,19 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid account ID")
 		return
+	}
+
+	if r.Header.Get("X-Internal-Token") == "" {
+		account, aerr := h.accountService.GetAccount(r.Context(), id)
+		if aerr != nil {
+			respondError(w, http.StatusNotFound, aerr.Error())
+			return
+		}
+		caller, perr := uuid.Parse(r.Header.Get("X-User-ID"))
+		if perr != nil || caller != account.UserID {
+			respondError(w, http.StatusForbidden, "you can only access your own accounts")
+			return
+		}
 	}
 
 	available, current, reserved, err := h.accountService.GetBalance(r.Context(), id)
@@ -119,5 +144,44 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 		"available_balance": available,
 		"current_balance":   current,
 		"reserved_balance":  reserved,
+	})
+}
+
+// SetLockdown toggles the emergency lockdown switch (money out blocked, money
+// in allowed). Only the account owner can toggle it.
+func (h *Handlers) SetLockdown(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["id"])
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid account ID")
+		return
+	}
+
+	caller, err := uuid.Parse(r.Header.Get("X-User-ID"))
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	var req domain.SetLockdownRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	account, err := h.accountService.SetLockdown(r.Context(), caller, id, req.LockdownEnabled)
+	if err != nil {
+		if err.Error() == "account does not belong to caller" {
+			respondError(w, http.StatusForbidden, err.Error())
+			return
+		}
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"account_id":       account.AccountID,
+		"lockdown_enabled": account.LockdownEnabled,
+		"status":           account.Status,
 	})
 }

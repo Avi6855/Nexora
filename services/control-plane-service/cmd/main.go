@@ -25,8 +25,9 @@ func main() {
 
 	healthRepo := repository.NewInMemoryHealthRepository()
 	healthService := service.NewHealthService(healthRepo, logger)
+	dependencyService := service.NewDependencyService(healthRepo, healthService, logger)
 
-	handlers := transport.NewHandlers(healthService, logger)
+	handlers := transport.NewHandlers(healthService, dependencyService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
 

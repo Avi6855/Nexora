@@ -30,10 +30,10 @@ func (r *cassandraTransferRepository) Create(ctx context.Context, transfer *doma
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	return r.session.Query(query,
-		transfer.TransferID,
+		gocql.UUID(transfer.TransferID),
 		transfer.IdempotencyKey,
-		transfer.FromAccountID,
-		transfer.ToAccountID,
+		gocql.UUID(transfer.FromAccountID),
+		gocql.UUID(transfer.ToAccountID),
 		transfer.Amount,
 		transfer.Currency,
 		string(transfer.Status),
@@ -43,85 +43,17 @@ func (r *cassandraTransferRepository) Create(ctx context.Context, transfer *doma
 	).WithContext(ctx).Exec()
 }
 
-func (r *cassandraTransferRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Transfer, error) {
-	var transfer domain.Transfer
-	var status string
-
-	query := `SELECT transfer_id, idempotency_key, from_account_id, to_account_id, amount, currency, status, description, created_at, completed_at
-		FROM transfers WHERE transfer_id = ?`
-
-	err := r.session.Query(query, id).WithContext(ctx).Scan(
-		&transfer.TransferID,
-		&transfer.IdempotencyKey,
-		&transfer.FromAccountID,
-		&transfer.ToAccountID,
-		&transfer.Amount,
-		&transfer.Currency,
-		&status,
-		&transfer.Description,
-		&transfer.CreatedAt,
-		&transfer.CompletedAt,
-	)
-
-	if err == gocql.ErrNotFound {
-		return nil, fmt.Errorf("transfer not found")
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	transfer.Status = domain.TransferStatus(status)
-	return &transfer, nil
-}
-
-func (r *cassandraTransferRepository) GetByIdempotencyKey(ctx context.Context, key string) (*domain.Transfer, error) {
-	var transfer domain.Transfer
-	var status string
-
-	query := `SELECT transfer_id, idempotency_key, from_account_id, to_account_id, amount, currency, status, description, created_at, completed_at
-		FROM transfers WHERE idempotency_key = ? ALLOW FILTERING`
-
-	err := r.session.Query(query, key).WithContext(ctx).Scan(
-		&transfer.TransferID,
-		&transfer.IdempotencyKey,
-		&transfer.FromAccountID,
-		&transfer.ToAccountID,
-		&transfer.Amount,
-		&transfer.Currency,
-		&status,
-		&transfer.Description,
-		&transfer.CreatedAt,
-		&transfer.CompletedAt,
-	)
-
-	if err == gocql.ErrNotFound {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	transfer.Status = domain.TransferStatus(status)
-	return &transfer, nil
-}
-
-func (r *cassandraTransferRepository) GetByFromAccount(ctx context.Context, accountID uuid.UUID) ([]*domain.Transfer, error) {
+func scanTransfer(iter *gocql.Iter) ([]*domain.Transfer, error) {
 	var transfers []*domain.Transfer
-
-	query := `SELECT transfer_id, idempotency_key, from_account_id, to_account_id, amount, currency, status, description, created_at, completed_at
-		FROM transfers WHERE from_account_id = ?`
-
-	iter := r.session.Query(query, accountID).WithContext(ctx).Iter()
-	defer iter.Close()
-
 	var transfer domain.Transfer
+	var transferID, fromAccountID, toAccountID gocql.UUID
 	var status string
 
 	for iter.Scan(
-		&transfer.TransferID,
+		&transferID,
 		&transfer.IdempotencyKey,
-		&transfer.FromAccountID,
-		&transfer.ToAccountID,
+		&fromAccountID,
+		&toAccountID,
 		&transfer.Amount,
 		&transfer.Currency,
 		&status,
@@ -129,6 +61,9 @@ func (r *cassandraTransferRepository) GetByFromAccount(ctx context.Context, acco
 		&transfer.CreatedAt,
 		&transfer.CompletedAt,
 	) {
+		transfer.TransferID = uuid.UUID(transferID)
+		transfer.FromAccountID = uuid.UUID(fromAccountID)
+		transfer.ToAccountID = uuid.UUID(toAccountID)
 		transfer.Status = domain.TransferStatus(status)
 		t := transfer
 		transfers = append(transfers, &t)
@@ -137,11 +72,54 @@ func (r *cassandraTransferRepository) GetByFromAccount(ctx context.Context, acco
 	if err := iter.Close(); err != nil {
 		return nil, err
 	}
-
 	return transfers, nil
+}
+
+func (r *cassandraTransferRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Transfer, error) {
+	query := `SELECT transfer_id, idempotency_key, from_account_id, to_account_id, amount, currency, status, description, created_at, completed_at
+		FROM transfers WHERE transfer_id = ?`
+
+	iter := r.session.Query(query, gocql.UUID(id)).WithContext(ctx).Iter()
+	defer iter.Close()
+
+	transfers, err := scanTransfer(iter)
+	if err != nil {
+		return nil, err
+	}
+	if len(transfers) == 0 {
+		return nil, fmt.Errorf("transfer not found")
+	}
+	return transfers[0], nil
+}
+
+func (r *cassandraTransferRepository) GetByIdempotencyKey(ctx context.Context, key string) (*domain.Transfer, error) {
+	query := `SELECT transfer_id, idempotency_key, from_account_id, to_account_id, amount, currency, status, description, created_at, completed_at
+		FROM transfers WHERE idempotency_key = ? ALLOW FILTERING`
+
+	iter := r.session.Query(query, key).WithContext(ctx).Iter()
+	defer iter.Close()
+
+	transfers, err := scanTransfer(iter)
+	if err != nil {
+		return nil, err
+	}
+	if len(transfers) == 0 {
+		return nil, nil
+	}
+	return transfers[0], nil
+}
+
+func (r *cassandraTransferRepository) GetByFromAccount(ctx context.Context, accountID uuid.UUID) ([]*domain.Transfer, error) {
+	query := `SELECT transfer_id, idempotency_key, from_account_id, to_account_id, amount, currency, status, description, created_at, completed_at
+		FROM transfers WHERE from_account_id = ?`
+
+	iter := r.session.Query(query, gocql.UUID(accountID)).WithContext(ctx).Iter()
+	defer iter.Close()
+
+	return scanTransfer(iter)
 }
 
 func (r *cassandraTransferRepository) Update(ctx context.Context, transfer *domain.Transfer) error {
 	query := `UPDATE transfers SET status = ?, completed_at = ? WHERE transfer_id = ?`
-	return r.session.Query(query, string(transfer.Status), transfer.CompletedAt, transfer.TransferID).WithContext(ctx).Exec()
+	return r.session.Query(query, string(transfer.Status), transfer.CompletedAt, gocql.UUID(transfer.TransferID)).WithContext(ctx).Exec()
 }

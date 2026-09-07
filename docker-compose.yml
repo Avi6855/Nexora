@@ -4,7 +4,7 @@ services:
     image: cassandra:4.1
     container_name: nexora-cassandra
     ports:
-      - "9042:9042"
+      - "127.0.0.1:9042:9042"
     volumes:
       - cassandra-data:/var/lib/cassandra
       - ./cassandra/init:/docker-entrypoint-initdb.d
@@ -26,7 +26,7 @@ services:
     image: apache/kafka:3.7.0
     container_name: nexora-kafka
     ports:
-      - "9092:9092"
+      - "127.0.0.1:9092:9092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -57,7 +57,7 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: nexora
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
@@ -77,7 +77,7 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     environment:
       SERVICE_PORT: "8081"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
@@ -87,6 +87,7 @@ services:
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL}
       JWT_REFRESH_TTL: ${JWT_REFRESH_TTL}
       OTP_TTL: ${OTP_TTL}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
       - nexora-network
     healthcheck:
@@ -108,12 +109,14 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8082:8082"
+      - "127.0.0.1:8082:8082"
     environment:
       SERVICE_PORT: "8082"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
       - nexora-network
     healthcheck:
@@ -135,12 +138,15 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8083:8083"
+      - "127.0.0.1:8083:8083"
     environment:
       SERVICE_PORT: "8083"
+      LEDGER_SERVICE_URL: http://ledger-service:8084
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
       - nexora-network
     healthcheck:
@@ -162,12 +168,16 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8084:8084"
+      - "127.0.0.1:8084:8084"
     environment:
       SERVICE_PORT: "8084"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      INCIDENT_SERVICE_URL: http://incident-service:8097
+      CONTROL_PLANE_SERVICE_URL: http://control-plane-service:8096
     networks:
       - nexora-network
     healthcheck:
@@ -189,12 +199,14 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8085:8085"
+      - "127.0.0.1:8085:8085"
     environment:
       SERVICE_PORT: "8085"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
       - nexora-network
     healthcheck:
@@ -216,12 +228,14 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8086:8086"
+      - "127.0.0.1:8086:8086"
     environment:
       SERVICE_PORT: "8086"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
       - nexora-network
     healthcheck:
@@ -243,12 +257,16 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8087:8087"
+      - "127.0.0.1:8087:8087"
     environment:
       SERVICE_PORT: "8087"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      FRAUD_SERVICE_URL: http://fraud-service:8089
+      LEDGER_SERVICE_URL: http://ledger-service:8084
     networks:
       - nexora-network
     healthcheck:
@@ -270,12 +288,14 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8088:8088"
+      - "127.0.0.1:8088:8088"
     environment:
       SERVICE_PORT: "8088"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
       - nexora-network
     healthcheck:
@@ -297,16 +317,103 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8089:8089"
+      - "127.0.0.1:8089:8089"
     environment:
       SERVICE_PORT: "8089"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
       - nexora-network
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8189/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  insights-service:
+    build:
+      context: .
+      dockerfile: services/insights-service/Dockerfile
+    container_name: nexora-insights-service
+    depends_on:
+      cassandra:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8099:8099"
+    environment:
+      SERVICE_PORT: "8099"
+      CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
+      CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
+      KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      LEDGER_SERVICE_URL: http://ledger-service:8084
+    networks:
+      - nexora-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8199/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  dispute-service:
+    build:
+      context: .
+      dockerfile: services/dispute-service/Dockerfile
+    container_name: nexora-dispute-service
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8098:8098"
+    environment:
+      SERVICE_PORT: "8098"
+      CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
+      CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
+      KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      LEDGER_SERVICE_URL: http://ledger-service:8084
+    networks:
+      - nexora-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8198/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  consent-service:
+    build:
+      context: .
+      dockerfile: services/consent-service/Dockerfile
+    container_name: nexora-consent-service
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8100:8097"
+    environment:
+      SERVICE_PORT: "8097"
+      CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
+      CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
+      KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+    networks:
+      - nexora-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8197/live"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -324,12 +431,14 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8090:8090"
+      - "127.0.0.1:8090:8090"
     environment:
       SERVICE_PORT: "8090"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
       - nexora-network
     healthcheck:
@@ -351,12 +460,14 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8091:8091"
+      - "127.0.0.1:8091:8091"
     environment:
       SERVICE_PORT: "8091"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
       - nexora-network
     healthcheck:
@@ -378,12 +489,14 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8092:8092"
+      - "127.0.0.1:8092:8092"
     environment:
       SERVICE_PORT: "8092"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
       - nexora-network
     healthcheck:
@@ -405,12 +518,14 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8093:8093"
+      - "127.0.0.1:8093:8093"
     environment:
       SERVICE_PORT: "8093"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
       - nexora-network
     healthcheck:
@@ -432,12 +547,14 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8094:8094"
+      - "127.0.0.1:8094:8094"
     environment:
       SERVICE_PORT: "8094"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
       - nexora-network
     healthcheck:
@@ -459,12 +576,14 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8095:8095"
+      - "127.0.0.1:8095:8095"
     environment:
       SERVICE_PORT: "8095"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
       - nexora-network
     healthcheck:
@@ -486,12 +605,14 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8096:8096"
+      - "127.0.0.1:8096:8096"
     environment:
       SERVICE_PORT: "8096"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
       - nexora-network
     healthcheck:
@@ -513,12 +634,14 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8097:8097"
+      - "127.0.0.1:8097:8097"
     environment:
       SERVICE_PORT: "8097"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
       - nexora-network
     healthcheck:
@@ -550,6 +673,12 @@ services:
         condition: service_healthy
       pot-service:
         condition: service_healthy
+      insights-service:
+        condition: service_healthy
+      dispute-service:
+        condition: service_healthy
+      consent-service:
+        condition: service_healthy
       notification-service:
         condition: service_healthy
       control-plane-service:
@@ -566,7 +695,7 @@ services:
         condition: service_healthy
     ports:
       - "8000:8000"
-      - "9901:9901"
+      - "127.0.0.1:9901:9901"
     volumes:
       - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
     networks:
@@ -578,6 +707,41 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: nexora-prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - nexora-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: nexora-grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: monzo
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - nexora-network
+    depends_on:
+      prometheus:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

@@ -1,11 +1,16 @@
 package domain
 
 import (
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/nexora/nexora/shared/money"
 )
+
+// ErrAccountLocked is returned when an operation is refused because the
+// account is in emergency lockdown (money out blocked, money in allowed).
+var ErrAccountLocked = errors.New("account is locked: outbound payments are temporarily disabled")
 
 type AccountType string
 
@@ -32,8 +37,13 @@ type Account struct {
 	CurrentBalance   money.Money   `json:"current_balance"`
 	ReservedBalance  money.Money   `json:"reserved_balance"`
 	Status           AccountStatus `json:"status"`
-	CreatedAt        time.Time     `json:"created_at"`
-	UpdatedAt        time.Time     `json:"updated_at"`
+	// LockdownEnabled is the emergency "freeze money out" switch (Monzo-style
+	// lockdown): when set, outbound card payments, bank transfers and cash
+	// withdrawals are refused at the enforcement points. Money IN, Direct
+	// Debits and internal savings sweeps still work.
+	LockdownEnabled bool       `json:"lockdown_enabled"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 func NewAccount(userID uuid.UUID, accountType AccountType, currency string) (*Account, error) {
@@ -69,6 +79,11 @@ type CreateAccountRequest struct {
 	UserID      string      `json:"user_id"`
 	AccountType AccountType `json:"account_type"`
 	Currency    string      `json:"currency"`
+}
+
+// SetLockdownRequest is the emergency-lockdown toggle payload.
+type SetLockdownRequest struct {
+	LockdownEnabled bool `json:"lockdown_enabled"`
 }
 
 type ErrorResponse struct {

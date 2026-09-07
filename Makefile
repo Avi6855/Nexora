@@ -1,4 +1,4 @@
-.PHONY: dev-up dev-down build test test-unit test-integration test-financial test-contract test-all lint init-db logs clean fmt
+.PHONY: dev-up dev-down build test test-unit test-integration test-financial test-contract test-shared test-all lint init-db logs clean fmt
 
 dev-up:
 	docker-compose up -d
@@ -15,16 +15,26 @@ test:
 test-unit:
 	go test ./tests/unit/...
 
+# Integration & financial-invariant suites live inside the service modules
+# (they exercise internal packages, so they must live under each module root).
 test-integration:
-	go test ./tests/integration/...
+	cd services/ledger-service && go test ./tests/...
+	cd services/payment-service && go test ./tests/...
 
 test-financial:
-	go test ./tests/financial/...
+	cd services/ledger-service && go test ./tests/...
+	cd services/payment-service && go test ./tests/...
 
 test-contract:
 	go test ./tests/contract/...
 
-test-all: test-unit test-integration test-financial test-contract
+# Platform correctness suites: deterministic financial calculation library
+# (golden corpus), dual-implementation verification, canary data validation,
+# latency budgets, adaptive concurrency, retry semantics.
+test-shared:
+	cd shared && go test ./calc/... ./verify/... ./latency/... ./concurrency/... ./retry/...
+
+test-all: test-unit test-shared test-integration test-financial test-contract
 
 lint:
 	go vet ./...

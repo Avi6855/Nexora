@@ -119,6 +119,25 @@ make test
 | Control Plane | 8096 | Service orchestration |
 | Incident Service | 8097 | Incident management |
 
+### Platform Capabilities (shared libraries)
+
+| Package | Purpose |
+|---------|---------|
+| `shared/calc` | Deterministic, versioned financial arithmetic — exact accrual accumulator, day counts, DST-safe calendars, effective-dated rate schedules, golden-corpus gated |
+| `shared/verify` | Dual-implementation calculation verification with quarantine + canary data validation with drift budgets |
+| `shared/latency` | API latency budget manager with in-band deadline propagation |
+| `shared/concurrency` | Adaptive concurrency controller (AIMD) — the knee of the latency curve, not the cliff |
+| `shared/retry` | API error semantics + retry classification (NEVER/IMMEDIATE/DELAYED/REAUTH/POISON/DUPLICATE) with full-jitter backoff |
+
+The policy service also hosts the **Time-Travel Compliance Engine**
+(`/v1/compliance/time-travel`): historical decision reconstruction from
+append-only policy versions and customer-state snapshots, with a verifiable
+replay hash. The control plane hosts the **Regulatory Change Impact Analyzer**
+(`/v1/control/regulatory/impact`) and the **Regulatory Reporting Pipeline**
+with evidence provenance (`/v1/control/regulatory/reports/...`) — every
+submitted figure carries a hash-verified chain from source datasets through
+transformation to submission.
+
 ## API Documentation
 
 See [docs/api/API.md](docs/api/API.md) for complete API reference.
@@ -172,6 +191,9 @@ make test-financial
 # API contract tests
 make test-contract
 
+# Platform correctness suites (calc golden corpus, verify, latency, concurrency, retry)
+make test-shared
+
 # All tests
 make test-all
 ```
@@ -210,6 +232,11 @@ make status
 - [ADR-008: Event Replay](docs/adr/ADR-008-replay.md)
 - [ADR-009: Snapshotting](docs/adr/ADR-009-snapshotting.md)
 - [ADR-010: Consistency](docs/adr/ADR-010-consistency.md)
+- [ADR-023: Calc Library & Verification](docs/adr/ADR-023-calc-verification.md)
+- [ADR-024: Latency Budgets & Adaptive Concurrency](docs/adr/ADR-023-calc-verification.md)
+- [ADR-025: Time-Travel Compliance](docs/adr/ADR-023-calc-verification.md)
+- [ADR-026: Regulatory Impact & Evidence Provenance](docs/adr/ADR-023-calc-verification.md)
+- [ADR-027: Error Semantics & Retry Classification](docs/adr/ADR-023-calc-verification.md)
 
 ## License
 

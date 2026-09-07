@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -76,7 +77,12 @@ fun PotsScreen(
                             visible = true,
                             enter = fadeIn() + slideInVertically()
                         ) {
-                            PotItem(pot = pot)
+                            PotItem(
+                                pot = pot,
+                                onToggleRoundUp = { enabled ->
+                                    viewModel.setRoundUp(pot.id, enabled)
+                                }
+                            )
                         }
                     }
                 }
@@ -118,7 +124,7 @@ fun PotsScreen(
 }
 
 @Composable
-private fun PotItem(pot: Pot) {
+private fun PotItem(pot: Pot, onToggleRoundUp: (Boolean) -> Unit) {
     NexoraCard(
         modifier = Modifier.semantics {
             contentDescription = "${pot.name} pot, ${pot.balance.formatCurrency(pot.currency)} of ${pot.goal.formatCurrency(pot.currency)}"
@@ -138,6 +144,30 @@ private fun PotItem(pot: Pot) {
                 if (pot.isGoalReached) {
                     NexoraBadge(text = "Goal Reached!")
                 }
+            }
+            // Roundups: sweep spare change from every card payment into this
+            // pot (one pot at a time, enforced backend-side).
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Round up spare change",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Auto-save the change from every card payment",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = pot.isRoundUp,
+                    onCheckedChange = onToggleRoundUp
+                )
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),

@@ -58,4 +58,16 @@ class PotsViewModel @Inject constructor(
             }
         }
     }
+
+    /** Toggles automatic round-ups into [potId]; only one pot at a time. */
+    fun setRoundUp(potId: String, enabled: Boolean) {
+        viewModelScope.launch {
+            try {
+                potApi.setRoundUp(potId, com.nexora.app.core.network.api.RoundUpRequest(enabled))
+                loadPots()
+            } catch (e: Exception) {
+                _uiState.value = PotsUiState.Error(e.message ?: "Failed to update roundups")
+            }
+        }
+    }
 }

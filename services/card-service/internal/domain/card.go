@@ -35,6 +35,12 @@ const (
 type SpendingControls struct {
 	DailyLimit   int64 `json:"daily_limit"`
 	MonthlyLimit int64 `json:"monthly_limit"`
+	// Channel controls (Monzo-style): nil means "not set" which behaves as
+	// enabled. Gambling block inverts: true means e-commerce gambling merchants
+	// are declined.
+	OnlineEnabled        *bool `json:"online_enabled"`
+	ATMEnabled           *bool `json:"atm_enabled"`
+	GamblingBlockEnabled *bool `json:"gambling_block_enabled"`
 }
 
 type Card struct {
@@ -52,6 +58,20 @@ type Card struct {
 	Currency         string         `json:"currency"`
 	CreatedAt        time.Time      `json:"created_at"`
 	UpdatedAt        time.Time      `json:"updated_at"`
+}
+
+// AuthorizeChannelControls returns the effective channel flags for an
+// authorisation decision: booleans (nil -> enabled).
+func (c *Card) OnlineEnabled() bool {
+	return c.SpendingControls.OnlineEnabled == nil || *c.SpendingControls.OnlineEnabled
+}
+
+func (c *Card) ATMEnabled() bool {
+	return c.SpendingControls.ATMEnabled == nil || *c.SpendingControls.ATMEnabled
+}
+
+func (c *Card) GamblingBlocked() bool {
+	return c.SpendingControls.GamblingBlockEnabled != nil && *c.SpendingControls.GamblingBlockEnabled
 }
 
 func NewCard(userID, accountID uuid.UUID, cardNumberLast4 string, cardType CardType, spendingLimit, dailyLimit, monthlyLimit int64, currency string) *Card {
@@ -128,6 +148,29 @@ func (c *Card) UpdateSpendingLimits(dailyLimit, monthlyLimit int64) {
 	c.SpendingControls.DailyLimit = dailyLimit
 	c.SpendingControls.MonthlyLimit = monthlyLimit
 	c.UpdatedAt = time.Now().UTC()
+}
+
+// UpdateChannelControls applies user-facing spending toggles. A nil pointer
+// means "leave unchanged".
+func (c *Card) UpdateChannelControls(online, atm, gamblingBlock *bool) {
+	if online != nil {
+		c.SpendingControls.OnlineEnabled = online
+	}
+	if atm != nil {
+		c.SpendingControls.ATMEnabled = atm
+	}
+	if gamblingBlock != nil {
+		c.SpendingControls.GamblingBlockEnabled = gamblingBlock
+	}
+	c.UpdatedAt = time.Now().UTC()
+}
+
+// UpdateControlsRequest is the payload for PUT /v1/cards/{id}/controls. All
+// fields optional; only the provided ones change.
+type UpdateControlsRequest struct {
+	OnlineEnabled        *bool `json:"online_enabled"`
+	ATMEnabled           *bool `json:"atm_enabled"`
+	GamblingBlockEnabled *bool `json:"gambling_block_enabled"`
 }
 
 type CreateCardRequest struct {

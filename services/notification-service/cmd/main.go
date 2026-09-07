@@ -13,12 +13,15 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
-	"github.com/nexora/nexora/shared/config"
-	"github.com/nexora/nexora/shared/health"
 	"github.com/nexora/nexora/services/notification-service/internal/events"
+	"github.com/nexora/nexora/services/notification-service/internal/realtime"
 	"github.com/nexora/nexora/services/notification-service/internal/repository"
 	"github.com/nexora/nexora/services/notification-service/internal/service"
 	"github.com/nexora/nexora/services/notification-service/internal/transport"
+	"github.com/nexora/nexora/shared/auth"
+	"github.com/nexora/nexora/shared/config"
+	"github.com/nexora/nexora/shared/health"
+	"github.com/nexora/nexora/shared/telemetry"
 )
 
 func main() {
@@ -56,11 +59,38 @@ func main() {
 		defer producer.Close()
 	}
 
-	notifService := service.NewNotificationService(notifRepo, producer, logger)
+	hub := realtime.NewHub()
+	notifService := service.NewNotificationService(notifRepo, producer, hub, logger)
+
+	// Realtime event pipeline: consume card authorization + payment lifecycle
+	// events and turn them into durable notifications + SSE pushes.
+	consumerTopics := []string{
+		"nexora.card.authorization.approved",
+		"nexora.card.authorization.declined",
+		"nexora.card.authorization.captured",
+		"nexora.card.authorization.voided",
+		"nexora.payment.confirmed",
+		"nexora.payment.settled",
+		"nexora.insights.alerts",
+	}
+	consumer, err := events.NewKafkaConsumer(cfg.Kafka.Brokers, cfg.Kafka.GroupID+"-notifications", consumerTopics, notifService.HandleRealtimeEvent, logger)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to create Kafka consumer, continuing without event consumption")
+	} else {
+		consumer.Start(context.Background())
+		logger.Info().Strs("topics", consumerTopics).Msg("realtime Kafka consumer started")
+	}
 
 	handlers := transport.NewHandlers(notifService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"), "/v1/health", "/metrics").Middleware)
+
+	// Prometheus /metrics (shared/telemetry). Route-specific request
+	// counters + latency histograms are exposed for Prometheus/Grafana.
+	metricsRegistry := telemetry.NewRegistry()
+	router.HandleFunc("/metrics", telemetry.MetricsHandler(metricsRegistry)).Methods("GET")
+	router.Use(telemetry.HTTPMetrics(metricsRegistry, "notification-service"))
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)

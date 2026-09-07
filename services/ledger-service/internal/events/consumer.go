@@ -83,15 +83,31 @@ func (c *KafkaConsumer) Close() error {
 func (h *ConsumerGroupHandler) Setup(_ sarama.ConsumerGroupSession) error   { return nil }
 func (h *ConsumerGroupHandler) Cleanup(_ sarama.ConsumerGroupSession) error { return nil }
 
+// envelope is the outer shape payment-service publishes: the domain payload
+// lives in the nested `payload` field (see BuildPaymentOutboxEvent).
+type envelope struct {
+	Payload json.RawMessage `json:"payload"`
+}
+
 func (h *ConsumerGroupHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for msg := range claim.Messages() {
 		eventType := getHeader(msg.Headers, "event_type")
 
 		var payload PaymentEventPayload
-		if err := json.Unmarshal(msg.Value, &payload); err != nil {
-			h.logger.Error().Err(err).Str("topic", msg.Topic).Msg("failed to unmarshal event")
-			sess.MarkMessage(msg, "")
-			continue
+		if err := json.Unmarshal(msg.Value, &payload); err != nil || payload.AccountID == "" {
+			// Direct payload decode failed (or empty): unwrap the published
+			// envelope and decode its inner payload.
+			var env envelope
+			if err := json.Unmarshal(msg.Value, &env); err != nil {
+				h.logger.Error().Err(err).Str("topic", msg.Topic).Msg("failed to unmarshal event")
+				sess.MarkMessage(msg, "")
+				continue
+			}
+			if err := json.Unmarshal(env.Payload, &payload); err != nil {
+				h.logger.Error().Err(err).Str("topic", msg.Topic).Msg("failed to unmarshal event payload")
+				sess.MarkMessage(msg, "")
+				continue
+			}
 		}
 
 		if err := h.eventHandler(sess.Context(), &payload, eventType); err != nil {

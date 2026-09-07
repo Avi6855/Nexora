@@ -13,12 +13,17 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
-	"github.com/nexora/nexora/shared/config"
-	"github.com/nexora/nexora/shared/health"
 	"github.com/nexora/nexora/services/ledger-service/internal/events"
 	"github.com/nexora/nexora/services/ledger-service/internal/repository"
 	"github.com/nexora/nexora/services/ledger-service/internal/service"
 	"github.com/nexora/nexora/services/ledger-service/internal/transport"
+	"github.com/nexora/nexora/shared/auth"
+	"github.com/nexora/nexora/shared/config"
+	"github.com/nexora/nexora/shared/health"
+	"github.com/nexora/nexora/shared/shedding"
+	"github.com/nexora/nexora/shared/telemetry"
+
+	"github.com/nexora/nexora/services/ledger-service/internal/clients"
 )
 
 func main() {
@@ -60,9 +65,28 @@ func main() {
 
 	ledgerService := service.NewLedgerService(ledgerRepo, producer, logger)
 
-	paymentProcessor := events.NewPaymentEventProcessor(ledgerService, logger)
+	// Ledger invariant monitor: continuous balance-chain + recompute sweeps.
+	// On violation the monitor freezes the account and files a SEV1 incident
+	// (incident-service is optional — freeze + event trail always work).
+	ledgerService.SetIncidentReporter(clients.NewIncidentClient())
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		ledgerService.ScanAllAccountsIntegrity(context.Background()) // sweep once at boot
+		for {
+			select {
+			case <-ticker.C:
+				ledgerService.ScanAllAccountsIntegrity(context.Background())
+			}
+		}
+	}()
+
+	paymentProcessor := events.NewPaymentEventProcessor(ledgerService, ledgerRepo, logger)
 	consumerTopics := []string{"nexora.payment.confirmed", "nexora.payment.settled"}
-	consumer, err := events.NewKafkaConsumer(cfg.Kafka.Brokers, cfg.Kafka.GroupID+"-ledger", consumerTopics, paymentProcessor.HandlePaymentEvent, logger)
+	// -ledger-v2: fresh group id so the fixed consumer replays from the oldest
+	// offset (the previous group had committed offsets for events it could not
+	// parse because they are published as envelopes).
+	consumer, err := events.NewKafkaConsumer(cfg.Kafka.Brokers, cfg.Kafka.GroupID+"-ledger-v2", consumerTopics, paymentProcessor.HandlePaymentEvent, logger)
 	if err != nil {
 		logger.Warn().Err(err).Msg("failed to create Kafka consumer, continuing without event consumption")
 	} else {
@@ -73,6 +97,26 @@ func main() {
 	handlers := transport.NewHandlers(ledgerService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+
+	// Adaptive load shedding: the ledger is the last line of defence, so it
+	// sheds exploratory traffic first when dependencies degrade.
+	controlURL := os.Getenv("CONTROL_PLANE_SERVICE_URL")
+	if controlURL == "" {
+		controlURL = "http://localhost:8096"
+	}
+	shedder := shedding.New("ledger-service", controlURL, nil)
+	shedCtx, cancelShed := context.WithCancel(context.Background())
+	defer cancelShed()
+	shedder.Start(shedCtx)
+	router.Use(shedder.Handler)
+
+	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"), "/v1/health", "/metrics").Middleware)
+
+	// Prometheus /metrics (shared/telemetry). Route-specific request
+	// counters + latency histograms are exposed for Prometheus/Grafana.
+	metricsRegistry := telemetry.NewRegistry()
+	router.HandleFunc("/metrics", telemetry.MetricsHandler(metricsRegistry)).Methods("GET")
+	router.Use(telemetry.HTTPMetrics(metricsRegistry, "ledger-service"))
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)

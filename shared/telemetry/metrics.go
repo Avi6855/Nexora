@@ -33,17 +33,17 @@ type Gauge struct {
 }
 
 type MetricsCollector struct {
-	requestCounter      *Counter
-	errorCounter        *Counter
-	paymentSuccessRate  *Gauge
-	unknownRate         *Gauge
-	kafkaLag            *Gauge
-	cassandraLatency    *Histogram
-	latencyHistogram    *Histogram
-	counters            map[string]*Counter
-	histograms          map[string]*Histogram
-	gauges              map[string]*Gauge
-	mu                  sync.RWMutex
+	requestCounter     *Counter
+	errorCounter       *Counter
+	paymentSuccessRate *Gauge
+	unknownRate        *Gauge
+	kafkaLag           *Gauge
+	cassandraLatency   *Histogram
+	latencyHistogram   *Histogram
+	counters           map[string]*Counter
+	histograms         map[string]*Histogram
+	gauges             map[string]*Gauge
+	mu                 sync.RWMutex
 }
 
 func NewMetricsCollector() *MetricsCollector {

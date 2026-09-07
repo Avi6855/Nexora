@@ -1,11 +1,18 @@
 package domain
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// ErrBlockedByRisk marks a payment refused by the real-time scam-intelligence
+// engine before any money moved. Handlers map it to HTTP 403 with the risk
+// reasons so the app can show the Monzo-style "we stopped this payment"
+// warning.
+var ErrBlockedByRisk = errors.New("payment blocked by risk engine")
 
 type PaymentState string
 
@@ -129,6 +136,7 @@ func (p *Payment) TransitionTo(target PaymentState) error {
 type CreatePaymentRequest struct {
 	IdempotencyKey  string            `json:"idempotency_key"`
 	AccountID       string            `json:"account_id"`
+	UserID          string            `json:"user_id,omitempty"`
 	PaymentType     PaymentType       `json:"payment_type"`
 	Amount          int64             `json:"amount"`
 	Currency        string            `json:"currency"`

@@ -3,6 +3,7 @@ package transport
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
@@ -28,6 +29,7 @@ func (h *Handlers) RegisterRoutes(router *mux.Router) {
 	router.HandleFunc("/v1/replay/transaction", h.ReplayTransaction).Methods("POST")
 	router.HandleFunc("/v1/replay/account", h.ReplayAccount).Methods("POST")
 	router.HandleFunc("/v1/replay/payment", h.ReplayPayment).Methods("POST")
+	router.HandleFunc("/v1/replay/time-travel", h.TimeTravel).Methods("POST")
 }
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -138,6 +140,38 @@ func (h *Handlers) ReplayPayment(w http.ResponseWriter, r *http.Request) {
 	result, err := h.replayService.ReplayPayment(r.Context(), req.PaymentID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, result)
+}
+
+// TimeTravel answers "what was this account's balance at instant T?" by
+// reconstructing state from the real append-only ledger. This is an
+// internal/debug endpoint; the auth middleware restricts it to service
+// tokens.
+func (h *Handlers) TimeTravel(w http.ResponseWriter, r *http.Request) {
+	var req domain.TimeTravelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	accountID, err := uuid.Parse(req.AccountID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid account_id")
+		return
+	}
+	at := time.Now().UTC()
+	if req.AtTime != "" {
+		parsed, err := time.Parse(time.RFC3339, req.AtTime)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid at_time, use RFC3339")
+			return
+		}
+		at = parsed
+	}
+	result, err := h.replayService.TimeTravel(r.Context(), accountID, at)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	respondJSON(w, http.StatusOK, result)

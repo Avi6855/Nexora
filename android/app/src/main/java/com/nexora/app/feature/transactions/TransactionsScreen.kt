@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,25 +18,32 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.nexora.app.core.design.animation.formatCurrency
+import com.nexora.app.core.design.component.CategoryIcons
 import com.nexora.app.core.design.component.NexoraTopBar
 import com.nexora.app.core.design.shimmer.ShimmerTransaction
 import com.nexora.app.core.design.theme.NexoraPrimary
@@ -49,7 +57,9 @@ fun TransactionsScreen(
     viewModel: TransactionsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var isRefreshing by remember { mutableStateOf(false) }
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val selectedType by viewModel.selectedType.collectAsState()
 
     Box(
         modifier = Modifier
@@ -63,6 +73,81 @@ fun TransactionsScreen(
                 title = "Transactions",
                 onBackClick = onNavigateBack
             )
+
+            // ── Search ──
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = viewModel::onSearchChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                placeholder = { Text("Search transactions") },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "Clear search",
+                            modifier = Modifier.clickable { viewModel.onSearchChange("") }
+                        )
+                    }
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                shape = RoundedCornerShape(12.dp)
+            )
+
+            // ── Category filter chips ──
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = selectedCategory == null,
+                    onClick = { viewModel.onCategorySelected(null) },
+                    label = { Text("All") }
+                )
+                CategoryIcons.filterOptions.forEach { (value, label) ->
+                    FilterChip(
+                        selected = selectedCategory == value,
+                        onClick = {
+                            viewModel.onCategorySelected(if (selectedCategory == value) null else value)
+                        },
+                        label = { Text(label) }
+                    )
+                }
+            }
+
+            // ── Money in / out toggle ──
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = selectedType == null,
+                    onClick = { viewModel.onTypeSelected(null) },
+                    label = { Text("Money in & out") }
+                )
+                FilterChip(
+                    selected = selectedType == "CREDIT",
+                    onClick = {
+                        viewModel.onTypeSelected(if (selectedType == "CREDIT") null else "CREDIT")
+                    },
+                    label = { Text("Money in") }
+                )
+                FilterChip(
+                    selected = selectedType == "DEBIT",
+                    onClick = {
+                        viewModel.onTypeSelected(if (selectedType == "DEBIT") null else "DEBIT")
+                    },
+                    label = { Text("Money out") }
+                )
+            }
 
             when (val state = uiState) {
                 is TransactionsUiState.Loading -> {
@@ -100,13 +185,16 @@ fun TransactionsScreen(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                text = "No transactions yet",
+                                text = if (searchQuery.isNotBlank() || selectedCategory != null || selectedType != null)
+                                    "No matching transactions"
+                                else
+                                    "No transactions yet",
                                 style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Your transactions will appear here",
+                                text = "Try a different search or filter",
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -155,21 +243,20 @@ private fun TransactionItem(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // Category emoji avatar (Monzo-style), falls back to +/- for money in/out.
         Box(
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
                 .background(
                     if (transaction.isCredit) MaterialTheme.colorScheme.primaryContainer
-                    else MaterialTheme.colorScheme.errorContainer
+                    else MaterialTheme.colorScheme.surfaceVariant
                 ),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = if (transaction.isCredit) "+" else "-",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = if (transaction.isCredit) NexoraPrimary else MaterialTheme.colorScheme.error
+                text = CategoryIcons.emojiFor(transaction.category),
+                style = MaterialTheme.typography.titleLarge
             )
         }
         Column(modifier = Modifier.weight(1f)) {
@@ -179,7 +266,13 @@ private fun TransactionItem(
                 fontWeight = FontWeight.Medium
             )
             Text(
-                text = transaction.category.ifEmpty { "Transfer" },
+                text = buildString {
+                    append(CategoryIcons.labelFor(transaction.category))
+                    if (transaction.note.isNotBlank()) {
+                        append(" · ")
+                        append(transaction.note)
+                    }
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

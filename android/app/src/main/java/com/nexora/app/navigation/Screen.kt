@@ -18,10 +18,20 @@ sealed class Screen(val route: String) {
         fun createRoute(transactionId: String) = "transaction/$transactionId"
     }
     data object Cards : Screen("cards")
+    data object CardDetail : Screen("card/{cardId}") {
+        fun createRoute(cardId: String) = "card/$cardId"
+    }
     data object Pots : Screen("pots")
+    data object Insights : Screen("insights")
     data object Profile : Screen("profile")
     data object Security : Screen("security")
     data object Notifications : Screen("notifications")
+    data object Disputes : Screen("disputes")
+    data object ReportDispute : Screen("report-dispute/{entryId}") {
+        fun createRoute(entryId: String) = "report-dispute/$entryId"
+    }
+    data object DelegatedAccess : Screen("delegated-access")
+    data object SystemStatus : Screen("system-status")
     data object SendMoney : Screen("send-money/{accountId}") {
         fun createRoute(accountId: String) = "send-money/$accountId"
     }

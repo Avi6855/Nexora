@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
+	"github.com/nexora/nexora/services/payment-service/internal/clients"
 	"github.com/nexora/nexora/services/payment-service/internal/domain"
 	"github.com/nexora/nexora/services/payment-service/internal/events"
 	"github.com/nexora/nexora/services/payment-service/internal/provider"
@@ -18,6 +20,23 @@ type PaymentService struct {
 	saga           *PaymentSaga
 	eventPublisher events.EventPublisher
 	logger         zerolog.Logger
+	// fraud asks the scam-intelligence engine for an outbound-transfer
+	// decision before money leaves the account (nil = checks disabled).
+	fraud *clients.FraudClient
+	// accounts resolves live account state (lockdown enforcement).
+	accounts *clients.AccountClient
+}
+
+// SetFraudClient enables the real-time scam-intelligence gate. Called from
+// main when FRAUD_SERVICE_URL is configured; tests without a fraud service
+// keep the default constructor.
+func (s *PaymentService) SetFraudClient(c *clients.FraudClient) {
+	s.fraud = c
+}
+
+// SetAccountClient enables the lockdown enforcement lookup.
+func (s *PaymentService) SetAccountClient(c *clients.AccountClient) {
+	s.accounts = c
 }
 
 func NewPaymentService(
@@ -36,6 +55,53 @@ func NewPaymentService(
 }
 
 func (s *PaymentService) CreatePayment(ctx context.Context, req *domain.CreatePaymentRequest) (*domain.Payment, error) {
+	// ── Pre-flight gates (before ANY state is persisted) ────────────────
+	// 1. Emergency lockdown: money out of a locked account is refused,
+	//    regardless of risk score. Money in is never affected.
+	if s.accounts != nil && req.AccountID != "" {
+		info, err := s.accounts.GetAccount(ctx, req.AccountID)
+		if err == nil && info.LockdownEnabled {
+			return nil, fmt.Errorf("%w: account is locked", domain.ErrBlockedByRisk)
+		}
+		// Lookup failures never block payments (fail-open): the ledger
+		// availability check still guarantees no over-spend.
+	}
+
+	// 2. Scam intelligence: evaluate the payment intent over the user's real
+	//    history. BLOCK refuses the payment; REVIEW/STEP_UP travel as payment
+	//    metadata so the app can warn the user before processing completes.
+	if s.fraud != nil && req.Amount > 0 && req.UserID != "" {
+		decision, err := s.fraud.EvaluateTransfer(ctx, &clients.TransferRiskRequest{
+			RequestID:        req.IdempotencyKey,
+			UserID:           req.UserID,
+			AccountID:        req.AccountID,
+			Amount:           req.Amount,
+			Currency:         req.Currency,
+			CounterpartyID:   req.CounterpartyID,
+			CounterpartyName: req.CounterpartyName,
+			Reference:        req.Reference,
+		})
+		if err != nil {
+			s.logger.Warn().Err(err).Msg("risk evaluation unavailable, allowing payment")
+		} else {
+			if decision.Action == "BLOCK" {
+				s.logger.Warn().
+					Str("idempotency_key", req.IdempotencyKey).
+					Float64("risk_score", decision.RiskScore).
+					Msg("payment blocked by risk engine")
+				return nil, fmt.Errorf("%w: %s", domain.ErrBlockedByRisk, strings.Join(decision.Reasons, ", "))
+			}
+			if req.Metadata == nil {
+				req.Metadata = map[string]string{}
+			}
+			req.Metadata["risk_action"] = decision.Action
+			req.Metadata["risk_score"] = fmt.Sprintf("%.2f", decision.RiskScore)
+			if decision.Advice != "" {
+				req.Metadata["risk_advice"] = decision.Advice
+			}
+		}
+	}
+
 	correlationID := extractOrCreateCorrelationID(ctx)
 	return s.saga.ExecuteCreatePayment(ctx, req, correlationID)
 }
@@ -48,6 +114,13 @@ func (s *PaymentService) GetPayment(ctx context.Context, id uuid.UUID) (*domain.
 func (s *PaymentService) GetPaymentsByAccount(ctx context.Context, accountID uuid.UUID) ([]*domain.Payment, error) {
 	s.logger.Info().Str("account_id", accountID.String()).Msg("getting account payments")
 	return s.paymentRepo.GetByAccountID(ctx, accountID)
+}
+
+// GetPaymentsByUser returns all payments belonging to a user (the app's
+// payments list).
+func (s *PaymentService) GetPaymentsByUser(ctx context.Context, userID uuid.UUID) ([]*domain.Payment, error) {
+	s.logger.Info().Str("user_id", userID.String()).Msg("getting user payments")
+	return s.paymentRepo.GetByUserID(ctx, userID)
 }
 
 func (s *PaymentService) AuthorizePayment(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
@@ -98,10 +171,6 @@ func (s *PaymentService) ReversePayment(ctx context.Context, id uuid.UUID) error
 		return fmt.Errorf("transition failed: %w", err)
 	}
 
-	if err := s.paymentRepo.Update(ctx, payment); err != nil {
-		return fmt.Errorf("updating payment: %w", err)
-	}
-
 	eventPayload := events.PaymentEventPayload{
 		PaymentID:        payment.PaymentID.String(),
 		IdempotencyKey:   payment.IdempotencyKey,
@@ -115,8 +184,8 @@ func (s *PaymentService) ReversePayment(ctx context.Context, id uuid.UUID) error
 		Reference:        payment.Reference,
 	}
 
-	if err := s.eventPublisher.PublishPaymentEvent(ctx, events.EventTypePaymentReversed, eventPayload, correlationID); err != nil {
-		s.logger.Error().Err(err).Msg("failed to publish payment.reversed event")
+	if err := s.saga.persistTransition(ctx, payment, events.EventTypePaymentReversed, eventPayload, correlationID); err != nil {
+		return fmt.Errorf("persisting reversal: %w", err)
 	}
 
 	s.logger.Info().

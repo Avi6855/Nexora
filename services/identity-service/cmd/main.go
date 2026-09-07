@@ -13,13 +13,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
-	"github.com/nexora/nexora/shared/auth"
-	"github.com/nexora/nexora/shared/config"
-	"github.com/nexora/nexora/shared/health"
 	"github.com/nexora/nexora/services/identity-service/internal/events"
 	"github.com/nexora/nexora/services/identity-service/internal/repository"
 	"github.com/nexora/nexora/services/identity-service/internal/service"
 	"github.com/nexora/nexora/services/identity-service/internal/transport"
+	"github.com/nexora/nexora/shared/auth"
+	"github.com/nexora/nexora/shared/config"
+	"github.com/nexora/nexora/shared/health"
 )
 
 func main() {
@@ -52,6 +52,7 @@ func main() {
 	userRepo := repository.NewCassandraUserRepository(session)
 	otpRepo := repository.NewCassandraOTPRepository(session)
 	deviceRepo := repository.NewCassandraDeviceRepository(session)
+	refreshRepo := repository.NewCassandraRefreshTokenRepository(session)
 
 	tokenMgr := auth.NewTokenManager(cfg.Auth.JWTSecret, cfg.Auth.AccessTokenTTL, cfg.Auth.RefreshTokenTTL)
 
@@ -63,11 +64,16 @@ func main() {
 		defer producer.Close()
 	}
 
-	authService := service.NewAuthService(userRepo, otpRepo, deviceRepo, tokenMgr, cfg.Auth.OTPTTL, logger)
+	authService := service.NewAuthService(userRepo, otpRepo, deviceRepo, refreshRepo, tokenMgr, cfg.Auth.OTPTTL, cfg.Auth.RefreshTokenTTL, logger)
 
 	handlers := transport.NewHandlers(authService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+	// Public: registration, login and token refresh. Everything else under
+	// /v1/auth (OTP verify, logout, device registration) requires a valid
+	// access token so users can only act on their own session.
+	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"),
+		"/v1/auth/register", "/v1/auth/login", "/v1/auth/refresh", "/.well-known", "/v1/health", "/metrics").Middleware)
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)

@@ -11,6 +11,7 @@ data class Account(
     @SerializedName("current_balance") val currentBalanceMoney: Money? = null,
     @SerializedName("reserved_balance") val reservedBalanceMoney: Money? = null,
     @SerializedName("status") val status: String = "active",
+    @SerializedName("lockdown_enabled") val lockdownEnabled: Boolean = false,
     @SerializedName("created_at") val createdAt: String = "",
     @SerializedName("updated_at") val updatedAt: String = "",
     // Legacy/UI fields - keep for backward compat with existing UI code
@@ -25,6 +26,7 @@ data class Account(
     val availableBalance: Long get() = availableBalanceMoney?.amount ?: 0L
     val reservedBalance: Long get() = reservedBalanceMoney?.amount ?: 0L
     val pendingBalance: Long get() = 0L
+    val isLockedDown: Boolean get() = lockdownEnabled
 
     fun balanceMoney() = currentBalanceMoney ?: Money(amount = balance, currency = currency)
     fun availableMoney() = availableBalanceMoney ?: Money(amount = availableBalance, currency = currency)

@@ -1,7 +1,6 @@
 package blast_radius
 
 import (
-	"fmt"
 	"sync"
 	"time"
 )

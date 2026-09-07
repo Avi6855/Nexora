@@ -97,6 +97,16 @@ func (h *Handlers) GetUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ownership: a user may only read their own profile. The X-User-ID
+	// header is set by the auth middleware from the verified JWT subject,
+	// never from client input.
+	callerIDStr := r.Header.Get("X-User-ID")
+	callerID, err := uuid.Parse(callerIDStr)
+	if err != nil || callerID != id {
+		respondError(w, http.StatusForbidden, "you can only access your own profile")
+		return
+	}
+
 	user, err := h.userService.GetUserByID(r.Context(), id)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())

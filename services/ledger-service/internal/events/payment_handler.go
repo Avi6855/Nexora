@@ -11,6 +11,7 @@ import (
 
 type PaymentEventProcessor struct {
 	ledgerService LedgerServiceInterface
+	gate          BookingGate
 	logger        zerolog.Logger
 }
 
@@ -18,9 +19,16 @@ type LedgerServiceInterface interface {
 	CreateDoubleEntryTransaction(ctx context.Context, req *domain.CreateDoubleEntryRequest) (*domain.LedgerTransaction, []*domain.LedgerEntry, error)
 }
 
-func NewPaymentEventProcessor(ledgerService LedgerServiceInterface, logger zerolog.Logger) *PaymentEventProcessor {
+// BookingGate claims a payment exactly once (LWT) so duplicate lifecycle
+// events (confirmed + settled for the same payment) never double-book.
+type BookingGate interface {
+	MarkPaymentBooked(ctx context.Context, paymentID uuid.UUID, idempotencyKey, eventType string) (bool, error)
+}
+
+func NewPaymentEventProcessor(ledgerService LedgerServiceInterface, gate BookingGate, logger zerolog.Logger) *PaymentEventProcessor {
 	return &PaymentEventProcessor{
 		ledgerService: ledgerService,
+		gate:          gate,
 		logger:        logger,
 	}
 }
@@ -28,11 +36,30 @@ func NewPaymentEventProcessor(ledgerService LedgerServiceInterface, logger zerol
 func (p *PaymentEventProcessor) HandlePaymentEvent(ctx context.Context, payload *PaymentEventPayload, eventType string) error {
 	switch eventType {
 	case "payment.confirmed", "payment.settled":
-		return p.createLedgerEntry(ctx, payload, eventType)
+		return p.bookOnce(ctx, payload, eventType)
 	default:
 		p.logger.Debug().Str("event_type", eventType).Msg("ignoring payment event")
 		return nil
 	}
+}
+
+func (p *PaymentEventProcessor) bookOnce(ctx context.Context, payload *PaymentEventPayload, eventType string) error {
+	paymentID, err := uuid.Parse(payload.PaymentID)
+	if err != nil {
+		return err
+	}
+
+	claimed, err := p.gate.MarkPaymentBooked(ctx, paymentID, payload.IdempotencyKey, eventType)
+	if err != nil {
+		return err
+	}
+	if !claimed {
+		p.logger.Info().Str("payment_id", payload.PaymentID).Str("event_type", eventType).Msg("payment already booked; skipping duplicate event")
+		return nil
+	}
+
+	p.logger.Info().Str("payment_id", payload.PaymentID).Str("event_type", eventType).Msg("payment claimed for booking")
+	return p.createLedgerEntry(ctx, payload, eventType)
 }
 
 func (p *PaymentEventProcessor) createLedgerEntry(ctx context.Context, payload *PaymentEventPayload, eventType string) error {

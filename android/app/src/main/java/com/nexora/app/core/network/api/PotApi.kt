@@ -41,4 +41,12 @@ interface PotApi {
         @Path("potId") potId: String,
         @Body request: DepositRequest
     ): Pot
+
+    @PUT("v1/pots/{potId}/roundup")
+    suspend fun setRoundUp(
+        @Path("potId") potId: String,
+        @Body request: RoundUpRequest
+    ): Pot
 }
+
+data class RoundUpRequest(val enabled: Boolean)

@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/google/uuid"
+	"github.com/nexora/nexora/services/replay-service/internal/clients"
 	"github.com/nexora/nexora/services/replay-service/internal/domain"
 	"github.com/nexora/nexora/services/replay-service/internal/events"
 	"github.com/nexora/nexora/services/replay-service/internal/repository"
@@ -16,15 +18,17 @@ import (
 type ReplayService struct {
 	repo     repository.ReplayRepository
 	producer *events.KafkaProducer
+	ledger   *clients.LedgerClient
 	replays  map[uuid.UUID]*domain.ReplayRequest
 	events   map[string][]domain.ReplayStep
 	logger   zerolog.Logger
 }
 
-func NewReplayService(repo repository.ReplayRepository, producer *events.KafkaProducer, logger zerolog.Logger) *ReplayService {
+func NewReplayService(repo repository.ReplayRepository, producer *events.KafkaProducer, ledger *clients.LedgerClient, logger zerolog.Logger) *ReplayService {
 	return &ReplayService{
 		repo:     repo,
 		producer: producer,
+		ledger:   ledger,
 		replays:  make(map[uuid.UUID]*domain.ReplayRequest),
 		events:   make(map[string][]domain.ReplayStep),
 		logger:   logger,
@@ -153,6 +157,118 @@ func (s *ReplayService) ReplayTransaction(ctx context.Context, transactionID str
 	}
 
 	_ = s.repo.StoreReplayResult(ctx, result)
+
+	return result, nil
+}
+
+// ── Time-travel over the real ledger ────────────────────────────────────────
+
+// TimeTravel reconstructs the account's state as it was at instant T from the
+// append-only ledger. The ledger stores balance_after on every entry, so the
+// authoritative answer is derived two independent ways and compared:
+//  1. backwards: take the newest entry at/before T and read its balance_after
+//  2. forwards: replay every entry up to T from zero (signed amounts)
+//
+// If both agree, the reconstruction is deterministic and the diff is empty —
+// that's the time-travel debug story ("customer's balance at 14:37 was X and
+// here is every entry that produced it").
+func (s *ReplayService) TimeTravel(ctx context.Context, accountID uuid.UUID, at time.Time) (*domain.TimeTravelResult, error) {
+	now := time.Now().UTC()
+	if at.After(now.Add(1 * time.Minute)) {
+		return nil, fmt.Errorf("snapshot time is in the future")
+	}
+	if s.ledger == nil {
+		return nil, fmt.Errorf("ledger client not configured")
+	}
+
+	entries, err := s.ledger.GetEntries(ctx, accountID, 500)
+	if err != nil {
+		return nil, fmt.Errorf("reading ledger for time-travel: %w", err)
+	}
+	if entries == nil {
+		entries = []clients.Entry{}
+	}
+	// Ledger returns newest-first; walk in booking order.
+	sorted := make([]clients.Entry, len(entries))
+	copy(sorted, entries)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].CreatedAt.Before(sorted[j].CreatedAt) })
+
+	// Forwards replay: signed sum of every entry at/before the snapshot.
+	var forward int64
+	seen := 0
+	steps := make([]domain.TimeTravelStep, 0, len(sorted))
+	for _, e := range sorted {
+		if e.CreatedAt.After(at) {
+			continue
+		}
+		if e.EntryDirect == "DEBIT" {
+			forward -= e.Amount
+		} else {
+			forward += e.Amount
+		}
+		seen++
+		steps = append(steps, domain.TimeTravelStep{
+			EntryID:      e.EntryID,
+			EntryType:    e.EntryType,
+			Description:  e.Description,
+			Amount:       e.Amount,
+			Direction:    e.EntryDirect,
+			BalanceAfter: e.BalanceAfter,
+			BookedAt:     e.CreatedAt,
+		})
+	}
+
+	// Backwards read: balance_after of the newest entry at/before T.
+	var backwards int64
+	for i := len(sorted) - 1; i >= 0; i-- {
+		if sorted[i].CreatedAt.After(at) {
+			continue
+		}
+		backwards = sorted[i].BalanceAfter
+		break
+	}
+	// Zero entries at snapshot → state was zero either way.
+
+	deterministic := forward == backwards
+	ledgerIsLive := seen == len(sorted)
+
+	s.logger.Info().
+		Str("account_id", accountID.String()).
+		Time("snapshot_at", at).
+		Int64("balance", backwards).
+		Bool("deterministic", deterministic).
+		Int("entries_seen", seen).
+		Msg("time-travel reconstruction complete")
+
+	result := &domain.TimeTravelResult{
+		AccountID:    accountID,
+		SnapshotAt:   at,
+		Balance:      backwards,
+		EntriesSeen:  seen,
+		LedgerIsLive: ledgerIsLive,
+		Steps:        steps,
+		ReplayedAt:   now,
+	}
+	if !deterministic {
+		// Forward replay disagrees with the stored running balance: surface
+		// both instead of failing, exactly what a debugging session wants.
+		result.Divergence = &domain.ReplayDifference{
+			Field:    "balance",
+			Original: fmt.Sprintf("%d", backwards),
+			Replayed: fmt.Sprintf("%d", forward),
+		}
+	}
+
+	_ = s.repo.StoreReplayResult(ctx, &domain.ReplayResult{
+		ReplayID:       uuid.New(),
+		OriginalResult: json.RawMessage(fmt.Sprintf(`{"account_id":%q,"snapshot_at":%q,"balance":%d}`, accountID, at.Format(time.RFC3339), backwards)),
+		ReplayedResult: json.RawMessage(fmt.Sprintf(`{"forward_balance":%d,"entries":%d}`, forward, seen)),
+		Differences:    func() []domain.ReplayDifference { if !deterministic { return []domain.ReplayDifference{*result.Divergence} }; return []domain.ReplayDifference{} }(),
+		Steps:          []domain.ReplayStep{},
+		Deterministic:  deterministic,
+		TotalEvents:    seen,
+		ReplayedAt:     now,
+	})
 
 	return result, nil
 }

@@ -49,6 +49,8 @@ fun LoginScreen(
     val uiState by viewModel.uiState.collectAsState()
     val email by viewModel.email.collectAsState()
     val password by viewModel.password.collectAsState()
+    val hasSavedSession = viewModel.hasSavedSession
+    val context = androidx.compose.ui.platform.LocalContext.current
     var contentVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -58,6 +60,9 @@ fun LoginScreen(
     LaunchedEffect(uiState) {
         when (val state = uiState) {
             is LoginUiState.Success -> {
+                onNavigateToHome()
+            }
+            is LoginUiState.UnlockedWithBiometrics -> {
                 onNavigateToHome()
             }
             else -> {}
@@ -143,7 +148,18 @@ fun LoginScreen(
                     cornerRadius = 12.dp
                 ) {
                     IconButton(
-                        onClick = { /* Biometric login */ },
+                        onClick = {
+                            val activity = context as? androidx.fragment.app.FragmentActivity
+                            if (activity != null && hasSavedSession) {
+                                com.nexora.app.core.security.BiometricGate.authenticateStatic(
+                                    activity
+                                ) { result ->
+                                    if (result is com.nexora.app.core.security.BiometricResult.Success) {
+                                        viewModel.onBiometricUnlock()
+                                    }
+                                }
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .size(48.dp)

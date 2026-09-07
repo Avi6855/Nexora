@@ -108,7 +108,6 @@ func (e *ChaosEngine) RunExperiment(ctx context.Context, experiment *Experiment)
 		Dur("duration", experiment.Duration).
 		Msg("starting chaos experiment")
 
-	injectStart := time.Now()
 	err := e.injector.Inject(ctx, experiment.FaultType, experiment.Target, experiment.Duration)
 	if err != nil {
 		e.mu.Lock()

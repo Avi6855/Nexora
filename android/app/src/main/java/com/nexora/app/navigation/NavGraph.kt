@@ -21,8 +21,12 @@ import com.nexora.app.feature.accounts.AccountsScreen
 import com.nexora.app.feature.auth.LoginScreen
 import com.nexora.app.feature.auth.OtpScreen
 import com.nexora.app.feature.auth.RegisterScreen
+import com.nexora.app.feature.cards.CardDetailScreen
 import com.nexora.app.feature.cards.CardsScreen
+import com.nexora.app.feature.disputes.DisputesScreen
+import com.nexora.app.feature.disputes.ReportDisputeScreen
 import com.nexora.app.feature.home.HomeScreen
+import com.nexora.app.feature.insights.InsightsScreen
 import com.nexora.app.feature.notifications.NotificationsScreen
 import com.nexora.app.feature.payments.PaymentFailedScreen
 import com.nexora.app.feature.payments.PaymentProcessingScreen
@@ -31,6 +35,8 @@ import com.nexora.app.feature.payments.PaymentUnknownScreen
 import com.nexora.app.feature.payments.SendMoneyScreen
 import com.nexora.app.feature.pots.PotsScreen
 import com.nexora.app.feature.profile.ProfileScreen
+import com.nexora.app.feature.reliability.SystemStatusScreen
+import com.nexora.app.feature.security.DelegatedAccessScreen
 import com.nexora.app.feature.security.SecurityScreen
 import com.nexora.app.feature.transactions.TransactionDetailScreen
 import com.nexora.app.feature.transactions.TransactionsScreen
@@ -141,7 +147,14 @@ fun NexoraNavGraph() {
                     onNavigateToTransaction = { transactionId ->
                         navController.navigate(Screen.TransactionDetail.createRoute(transactionId))
                     },
-                    onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) }
+                    onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
+                    onNavigateToInsights = { navController.navigate(Screen.Insights.route) }
+                )
+            }
+
+            composable(Screen.Insights.route) {
+                InsightsScreen(
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
 
@@ -191,12 +204,30 @@ fun NexoraNavGraph() {
                 val transactionId = backStackEntry.arguments?.getString("transactionId") ?: ""
                 TransactionDetailScreen(
                     transactionId = transactionId,
-                    onNavigateBack = { navController.popBackStack() }
+                    onNavigateBack = { navController.popBackStack() },
+                    onReportProblem = { entryId ->
+                        navController.navigate(Screen.ReportDispute.createRoute(entryId))
+                    }
                 )
             }
 
             composable(Screen.Cards.route) {
-                CardsScreen()
+                CardsScreen(
+                    onNavigateToCardDetail = { cardId ->
+                        navController.navigate(Screen.CardDetail.createRoute(cardId))
+                    }
+                )
+            }
+
+            composable(
+                route = Screen.CardDetail.route,
+                arguments = listOf(navArgument("cardId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val cardId = backStackEntry.arguments?.getString("cardId") ?: ""
+                CardDetailScreen(
+                    cardId = cardId,
+                    onNavigateBack = { navController.popBackStack() }
+                )
             }
 
             composable(Screen.Pots.route) {
@@ -206,6 +237,9 @@ fun NexoraNavGraph() {
             composable(Screen.Profile.route) {
                 ProfileScreen(
                     onNavigateToSecurity = { navController.navigate(Screen.Security.route) },
+                    onNavigateToDelegatedAccess = { navController.navigate(Screen.DelegatedAccess.route) },
+                    onNavigateToDisputes = { navController.navigate(Screen.Disputes.route) },
+                    onNavigateToSystemStatus = { navController.navigate(Screen.SystemStatus.route) },
                     onNavigateToLogin = {
                         navController.navigate(Screen.Login.route) {
                             popUpTo(0) { inclusive = true }
@@ -216,6 +250,39 @@ fun NexoraNavGraph() {
 
             composable(Screen.Security.route) {
                 SecurityScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToDelegatedAccess = { navController.navigate(Screen.DelegatedAccess.route) }
+                )
+            }
+
+            composable(Screen.DelegatedAccess.route) {
+                DelegatedAccessScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Screen.Disputes.route) {
+                DisputesScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToTransactions = {
+                        navController.navigate(Screen.Accounts.route)
+                    }
+                )
+            }
+
+            composable(
+                route = Screen.ReportDispute.route,
+                arguments = listOf(navArgument("entryId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val entryId = backStackEntry.arguments?.getString("entryId") ?: ""
+                ReportDisputeScreen(
+                    entryId = entryId,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Screen.SystemStatus.route) {
+                SystemStatusScreen(
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

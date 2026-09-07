@@ -73,7 +73,6 @@ type KafkaPublisherConfig struct {
 	Brokers     []string
 	TopicPrefix string
 	Logger      zerolog.Logger
-	UseOutbox   bool
 }
 
 func NewKafkaEventPublisher(cfg KafkaPublisherConfig) *KafkaEventPublisher {

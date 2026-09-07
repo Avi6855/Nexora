@@ -13,12 +13,14 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
-	"github.com/nexora/nexora/shared/config"
-	"github.com/nexora/nexora/shared/health"
 	"github.com/nexora/nexora/services/account-service/internal/events"
 	"github.com/nexora/nexora/services/account-service/internal/repository"
 	"github.com/nexora/nexora/services/account-service/internal/service"
 	"github.com/nexora/nexora/services/account-service/internal/transport"
+	"github.com/nexora/nexora/shared/auth"
+	"github.com/nexora/nexora/shared/config"
+	"github.com/nexora/nexora/shared/health"
+	"github.com/nexora/nexora/shared/telemetry"
 )
 
 func main() {
@@ -63,6 +65,13 @@ func main() {
 	handlers := transport.NewHandlers(accountService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"), "/v1/health", "/metrics").Middleware)
+
+	// Prometheus /metrics (shared/telemetry). Route-specific request
+	// counters + latency histograms are exposed for Prometheus/Grafana.
+	metricsRegistry := telemetry.NewRegistry()
+	router.HandleFunc("/metrics", telemetry.MetricsHandler(metricsRegistry)).Methods("GET")
+	router.Use(telemetry.HTTPMetrics(metricsRegistry, "account-service"))
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)

@@ -19,5 +19,16 @@ type FraudAnalysis struct {
 	IPAddress   string     `json:"ip_address"`
 	GeoLocation string     `json:"geo_location"`
 	Signals     string     `json:"signals"`
-	CreatedAt   time.Time  `json:"created_at"`
+	// Authorisation context captured from the real-time card request so the
+	// decision is traceable and future decisions can run velocity/pattern
+	// checks over this stored history.
+	Amount           int64   `json:"amount"`
+	Currency         string  `json:"currency"`
+	Merchant         string  `json:"merchant"`
+	MerchantCategory string  `json:"merchant_category"`
+	MerchantCity     string  `json:"merchant_city"`
+	MerchantCountry  string  `json:"merchant_country"`
+	Latitude         float64 `json:"latitude"`
+	Longitude        float64 `json:"longitude"`
+	CreatedAt        time.Time  `json:"created_at"`
 }

@@ -16,10 +16,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +44,7 @@ import com.nexora.app.core.design.theme.NexoraSuccess
 fun TransactionDetailScreen(
     transactionId: String,
     onNavigateBack: () -> Unit,
+    onReportProblem: (String) -> Unit = {},
     viewModel: TransactionDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -64,6 +70,8 @@ fun TransactionDetailScreen(
             }
             is TransactionDetailUiState.Success -> {
                 val transaction = state.transaction
+                val noteSaving by viewModel.noteSaving.collectAsState()
+                val noteSaved by viewModel.noteSaved.collectAsState()
 
                 Column(
                     modifier = Modifier
@@ -123,6 +131,14 @@ fun TransactionDetailScreen(
                         }
                     }
 
+                    // ── Note editor ("Add a note") ──
+                    NoteEditorCard(
+                        initialNote = transaction.note,
+                        isSaving = noteSaving,
+                        justSaved = noteSaved,
+                        onSave = { viewModel.saveNote(it) }
+                    )
+
                     NexoraCard {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             DetailRow(label = "Type", value = transaction.type.replaceFirstChar { it.uppercase() })
@@ -135,6 +151,16 @@ fun TransactionDetailScreen(
                             if (transaction.merchantName != null) {
                                 DetailRow(label = "Merchant", value = transaction.merchantName)
                             }
+                        }
+                    }
+
+                    // ── Dispute entry point ("report a problem") ──
+                    if (transaction.isDebit) {
+                        TextButton(onClick = { onReportProblem(transaction.id) }) {
+                            Text(
+                                "Something wrong? Report a problem with this payment",
+                                color = NexoraPrimary
+                            )
                         }
                     }
                 }
@@ -151,6 +177,55 @@ fun TransactionDetailScreen(
                             color = MaterialTheme.colorScheme.error
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoteEditorCard(
+    initialNote: String,
+    isSaving: Boolean,
+    justSaved: Boolean,
+    onSave: (String) -> Unit
+) {
+    var text by remember(initialNote) { mutableStateOf(initialNote) }
+
+    NexoraCard {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = "Note",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.take(500) },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Add a note to this transaction") },
+                minLines = 2,
+                singleLine = false
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = when {
+                        isSaving -> "Saving…"
+                        justSaved -> "Saved ✓"
+                        else -> ""
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                TextButton(
+                    onClick = { onSave(text) },
+                    enabled = !isSaving && text != initialNote
+                ) {
+                    Text("Save note")
                 }
             }
         }

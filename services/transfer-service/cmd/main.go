@@ -13,12 +13,14 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
-	"github.com/nexora/nexora/shared/config"
-	"github.com/nexora/nexora/shared/health"
+	"github.com/nexora/nexora/services/transfer-service/internal/clients"
 	"github.com/nexora/nexora/services/transfer-service/internal/events"
 	"github.com/nexora/nexora/services/transfer-service/internal/repository"
 	"github.com/nexora/nexora/services/transfer-service/internal/service"
 	"github.com/nexora/nexora/services/transfer-service/internal/transport"
+	"github.com/nexora/nexora/shared/auth"
+	"github.com/nexora/nexora/shared/config"
+	"github.com/nexora/nexora/shared/health"
 )
 
 func main() {
@@ -56,11 +58,12 @@ func main() {
 		defer producer.Close()
 	}
 
-	transferService := service.NewTransferService(transferRepo, producer, logger)
+	transferService := service.NewTransferService(transferRepo, clients.NewLedgerClient(), clients.NewAccountClient(), producer, logger)
 
 	handlers := transport.NewHandlers(transferService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"), "/v1/health", "/metrics").Middleware)
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)

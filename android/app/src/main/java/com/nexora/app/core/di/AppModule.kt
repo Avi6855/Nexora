@@ -7,9 +7,13 @@ import com.nexora.app.core.network.TokenAuthenticator
 import com.nexora.app.core.network.api.AccountApi
 import com.nexora.app.core.network.api.AuthApi
 import com.nexora.app.core.network.api.CardApi
+import com.nexora.app.core.network.api.ConsentApi
+import com.nexora.app.core.network.api.DisputeApi
+import com.nexora.app.core.network.api.InsightsApi
 import com.nexora.app.core.network.api.NotificationApi
 import com.nexora.app.core.network.api.PaymentApi
 import com.nexora.app.core.network.api.PotApi
+import com.nexora.app.core.network.api.ReliabilityApi
 import com.nexora.app.core.network.api.TransferApi
 import com.nexora.app.core.network.api.UserApi
 import dagger.Module
@@ -42,6 +46,10 @@ object AppModule {
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
+            // The SSE stream (/v1/stream) is long-lived; a 30s read timeout
+            // would kill it between keepalives.
+            .pingInterval(20, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build()
     }
 
@@ -92,4 +100,20 @@ object AppModule {
     @Provides
     @Singleton
     fun provideNotificationApi(retrofit: Retrofit): NotificationApi = retrofit.create(NotificationApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideInsightsApi(retrofit: Retrofit): InsightsApi = retrofit.create(InsightsApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideDisputeApi(retrofit: Retrofit): DisputeApi = retrofit.create(DisputeApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideConsentApi(retrofit: Retrofit): ConsentApi = retrofit.create(ConsentApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideReliabilityApi(retrofit: Retrofit): ReliabilityApi = retrofit.create(ReliabilityApi::class.java)
 }

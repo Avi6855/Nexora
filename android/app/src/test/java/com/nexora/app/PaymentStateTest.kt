@@ -104,7 +104,7 @@ class PaymentStateTest {
     @Test
     fun `state cannot transition to itself`() {
         for (state in PaymentState.entries) {
-            assertFalse(canTransitionTo(state, state), "State $state should not transition to itself")
+            assertFalse("State $state should not transition to itself", canTransitionTo(state, state))
         }
     }
 
