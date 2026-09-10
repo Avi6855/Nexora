@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/nexora/nexora/services/user-service/internal/events"
+	"github.com/nexora/nexora/services/user-service/internal/lifeevents"
 	"github.com/nexora/nexora/services/user-service/internal/repository"
 	"github.com/nexora/nexora/services/user-service/internal/service"
 	"github.com/nexora/nexora/services/user-service/internal/transport"
@@ -64,6 +65,10 @@ func main() {
 	handlers := transport.NewHandlers(userService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+
+	lifeSvc := lifeevents.NewService()
+	lifeHandlers := lifeevents.NewHandlers(lifeSvc)
+	lifeHandlers.RegisterRoutes(router)
 	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"), "/v1/health", "/metrics").Middleware)
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)

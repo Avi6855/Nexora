@@ -12,11 +12,12 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
-	"github.com/nexora/nexora/shared/config"
-	"github.com/nexora/nexora/shared/health"
+	"github.com/nexora/nexora/services/control-plane-service/internal/dataplatform"
 	"github.com/nexora/nexora/services/control-plane-service/internal/repository"
 	"github.com/nexora/nexora/services/control-plane-service/internal/service"
 	"github.com/nexora/nexora/services/control-plane-service/internal/transport"
+	"github.com/nexora/nexora/shared/config"
+	"github.com/nexora/nexora/shared/health"
 )
 
 func main() {
@@ -30,6 +31,9 @@ func main() {
 	handlers := transport.NewHandlers(healthService, dependencyService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+	dpSvc := dataplatform.NewService()
+	dpHandlers := dataplatform.NewHandlers(dpSvc, logger)
+	dpHandlers.RegisterRoutes(router)
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)

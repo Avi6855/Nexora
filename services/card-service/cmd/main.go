@@ -15,6 +15,7 @@ import (
 
 	"github.com/nexora/nexora/services/card-service/internal/clients"
 	"github.com/nexora/nexora/services/card-service/internal/events"
+	"github.com/nexora/nexora/services/card-service/internal/platform"
 	"github.com/nexora/nexora/services/card-service/internal/repository"
 	"github.com/nexora/nexora/services/card-service/internal/service"
 	"github.com/nexora/nexora/services/card-service/internal/transport"
@@ -77,6 +78,8 @@ func main() {
 	handlers := transport.NewHandlers(cardService, authService, logger, metricsRegistry)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+	plat := platform.NewPlatform()
+	platform.RegisterPlatformRoutes(router, plat)
 	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"), "/v1/health", "/metrics").Middleware)
 
 	// Prometheus /metrics (shared/telemetry). Route-specific request

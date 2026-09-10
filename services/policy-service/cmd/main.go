@@ -13,12 +13,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
-	"github.com/nexora/nexora/shared/config"
-	"github.com/nexora/nexora/shared/health"
+	"github.com/nexora/nexora/services/policy-service/internal/credit"
 	"github.com/nexora/nexora/services/policy-service/internal/events"
 	"github.com/nexora/nexora/services/policy-service/internal/repository"
 	"github.com/nexora/nexora/services/policy-service/internal/service"
 	"github.com/nexora/nexora/services/policy-service/internal/transport"
+	"github.com/nexora/nexora/shared/config"
+	"github.com/nexora/nexora/shared/health"
 )
 
 func main() {
@@ -71,6 +72,8 @@ func main() {
 	handlers.RegisterRoutes(router)
 	timeTravelHandlers := transport.NewTimeTravelHandlers(timeTravelService)
 	timeTravelHandlers.RegisterRoutes(router)
+	creditSvc := credit.NewService()
+	credit.RegisterCreditRoutes(router, creditSvc)
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)
