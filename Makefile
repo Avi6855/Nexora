@@ -30,9 +30,11 @@ test-contract:
 
 # Platform correctness suites: deterministic financial calculation library
 # (golden corpus), dual-implementation verification, canary data validation,
-# latency budgets, adaptive concurrency, retry semantics.
+# latency budgets, adaptive concurrency, retry semantics, handover fencing,
+# card network gateway, KYC engine, open-finance, data-platform health and
+# lifecycle, network engineering, engineering platform, operational economics.
 test-shared:
-	cd shared && go test ./calc/... ./verify/... ./latency/... ./concurrency/... ./retry/...
+	cd shared && go test ./calc/... ./verify/... ./latency/... ./concurrency/... ./retry/... ./handover/... ./cardnet/... ./kyc/... ./openfinance/... ./datainfra/... ./neteng/... ./engplatform/... ./economics/... ./cash/... ./cheques/... ./payees/... ./statements/... ./export/... ./search/... ./support/... ./vendors/... ./compliance/... ./cards/... ./credit/... ./mortgage/... ./investments/... ./lifeevents/... ./identity/... ./openbanking/... ./dataplatform/...
 
 test-all: test-unit test-shared test-integration test-financial test-contract
 
