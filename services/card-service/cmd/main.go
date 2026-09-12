@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
+	"github.com/nexora/nexora/services/card-service/internal/cardtokens"
 	"github.com/nexora/nexora/services/card-service/internal/clients"
 	"github.com/nexora/nexora/services/card-service/internal/events"
 	"github.com/nexora/nexora/services/card-service/internal/platform"
@@ -78,6 +79,9 @@ func main() {
 	handlers := transport.NewHandlers(cardService, authService, logger, metricsRegistry)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+	tokenSvc := cardtokens.NewService(logger)
+	tokenHandlers := cardtokens.NewHandlers(tokenSvc, logger)
+	tokenHandlers.RegisterRoutes(router)
 	plat := platform.NewPlatform()
 	platform.RegisterPlatformRoutes(router, plat)
 	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"), "/v1/health", "/metrics").Middleware)

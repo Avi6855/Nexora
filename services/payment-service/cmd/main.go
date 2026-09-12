@@ -16,6 +16,7 @@ import (
 	"github.com/nexora/nexora/services/payment-service/internal/clients"
 	"github.com/nexora/nexora/services/payment-service/internal/events"
 	"github.com/nexora/nexora/services/payment-service/internal/idem"
+	"github.com/nexora/nexora/services/payment-service/internal/moneymove"
 	"github.com/nexora/nexora/services/payment-service/internal/paycycle"
 	"github.com/nexora/nexora/services/payment-service/internal/provider"
 	"github.com/nexora/nexora/services/payment-service/internal/repository"
@@ -121,6 +122,13 @@ func main() {
 	idemSvc := idem.NewService(24*time.Hour, logger)
 	idem.NewHandlers(idemSvc, logger).RegisterRoutes(router)
 	logger.Info().Msg("idempotent API platform wired (/v1/idem)")
+
+	// Money-correctness platform (shared/moneymove): intent ledger with
+	// divergence flags, versioned instructions, precondition checks, atomic
+	// reservations, fencing leases and the overdraft coordinator.
+	moneymoveSvc := moneymove.NewService(logger)
+	moneymove.NewHandlers(moneymoveSvc, logger).RegisterRoutes(router)
+	logger.Info().Msg("money-move platform wired (/v1/money-move)")
 
 	// Adaptive load shedding: poll the control plane's dependency graph; when
 	// a critical dependency degrades, non-critical traffic is shed first so

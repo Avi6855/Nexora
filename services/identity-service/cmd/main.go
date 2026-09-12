@@ -15,6 +15,7 @@ import (
 
 	"github.com/nexora/nexora/services/identity-service/internal/events"
 	"github.com/nexora/nexora/services/identity-service/internal/idev"
+	"github.com/nexora/nexora/services/identity-service/internal/keysec"
 	"github.com/nexora/nexora/services/identity-service/internal/repository"
 	"github.com/nexora/nexora/services/identity-service/internal/service"
 	"github.com/nexora/nexora/services/identity-service/internal/transport"
@@ -74,6 +75,9 @@ func main() {
 	idevSvc := idev.NewService()
 	idevHandlers := idev.NewHandlers(idevSvc)
 	idevHandlers.RegisterRoutes(router)
+
+	keysecSvc := keysec.NewService(logger)
+	keysec.RegisterKeysecRoutes(router, keysecSvc)
 	// Public: registration, login and token refresh. Everything else under
 	// /v1/auth (OTP verify, logout, device registration) requires a valid
 	// access token so users can only act on their own session.

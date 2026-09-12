@@ -13,12 +13,14 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
-	"github.com/nexora/nexora/shared/config"
-	"github.com/nexora/nexora/shared/health"
 	"github.com/nexora/nexora/services/simulation-service/internal/events"
 	"github.com/nexora/nexora/services/simulation-service/internal/repository"
+	"github.com/nexora/nexora/services/simulation-service/internal/schemes"
 	"github.com/nexora/nexora/services/simulation-service/internal/service"
+	"github.com/nexora/nexora/services/simulation-service/internal/testgrid"
 	"github.com/nexora/nexora/services/simulation-service/internal/transport"
+	"github.com/nexora/nexora/shared/config"
+	"github.com/nexora/nexora/shared/health"
 )
 
 func main() {
@@ -61,6 +63,14 @@ func main() {
 	handlers := transport.NewHandlers(simService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+
+	schemeSvc := schemes.NewService(logger)
+	schemeHandlers := schemes.NewHandlers(schemeSvc, logger)
+	schemeHandlers.RegisterRoutes(router)
+
+	gridSvc := testgrid.NewService(logger)
+	gridHandlers := testgrid.NewHandlers(gridSvc, logger)
+	gridHandlers.RegisterRoutes(router)
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)

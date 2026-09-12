@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/nexora/nexora/services/ledger-service/internal/events"
+	"github.com/nexora/nexora/services/ledger-service/internal/financeops"
 	"github.com/nexora/nexora/services/ledger-service/internal/ledgerguard"
 	"github.com/nexora/nexora/services/ledger-service/internal/multicurrency"
 	"github.com/nexora/nexora/services/ledger-service/internal/repository"
@@ -107,6 +108,13 @@ func main() {
 	mcService := multicurrency.NewService(logger)
 	mcHandlers := multicurrency.NewHandlers(mcService, logger)
 	mcHandlers.RegisterRoutes(router)
+
+	// Finance-operations platform (shared/financeops): adjustment workflow,
+	// backdated events, close control, period locking, posting rules and
+	// sub-ledgers with consolidation.
+	financeopsSvc := financeops.NewService(logger)
+	financeops.NewHandlers(financeopsSvc, logger).RegisterRoutes(router)
+	logger.Info().Msg("finance-ops platform wired (/v1/finance-ops)")
 
 	// Adaptive load shedding: the ledger is the last line of defence, so it
 	// sheds exploratory traffic first when dependencies degrade.

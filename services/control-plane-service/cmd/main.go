@@ -14,7 +14,10 @@ import (
 
 	"github.com/nexora/nexora/services/control-plane-service/internal/dataplatform"
 	"github.com/nexora/nexora/services/control-plane-service/internal/depgraph"
+	"github.com/nexora/nexora/services/control-plane-service/internal/distcoord"
 	"github.com/nexora/nexora/services/control-plane-service/internal/failover"
+	"github.com/nexora/nexora/services/control-plane-service/internal/k8sops"
+	"github.com/nexora/nexora/services/control-plane-service/internal/mldata"
 	"github.com/nexora/nexora/services/control-plane-service/internal/releaseops"
 	"github.com/nexora/nexora/services/control-plane-service/internal/repository"
 	"github.com/nexora/nexora/services/control-plane-service/internal/service"
@@ -58,6 +61,21 @@ func main() {
 	depgraphSvc := depgraph.NewService(logger)
 	depgraph.NewHandlers(depgraphSvc, logger).RegisterRoutes(router)
 	logger.Info().Msg("dependency health graph wired (/v1/depgraph)")
+
+	// ── Distributed coordination (correlation, causality, HLC, locks) ────
+	distcoordSvc := distcoord.NewService(logger)
+	distcoord.NewHandlers(distcoordSvc, logger).RegisterRoutes(router)
+	logger.Info().Msg("distributed coordination wired (/v1/distcoord)")
+
+	// ── Kubernetes operations (drain safety, placement, upgrades) ────────
+	k8sopsSvc := k8sops.NewService(logger)
+	k8sops.NewHandlers(k8sopsSvc, logger).RegisterRoutes(router)
+	logger.Info().Msg("k8s operations wired (/v1/k8sops)")
+
+	// ── ML/data safety (impact, freshness, drift, rollback) ──────────────
+	mldataSvc := mldata.NewService(logger)
+	mldata.NewHandlers(mldataSvc, logger).RegisterRoutes(router)
+	logger.Info().Msg("ml/data safety wired (/v1/mldata)")
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)

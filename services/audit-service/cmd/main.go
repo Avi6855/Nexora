@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
+	"github.com/nexora/nexora/services/audit-service/internal/complianceops"
 	"github.com/nexora/nexora/services/audit-service/internal/dataline"
 	"github.com/nexora/nexora/services/audit-service/internal/docintel"
 	"github.com/nexora/nexora/services/audit-service/internal/events"
@@ -70,6 +71,8 @@ func main() {
 	docintel.RegisterDocIntelRoutes(router, docIntelService)
 	taxPackService := taxpack.NewService(logger)
 	taxpack.RegisterTaxPackRoutes(router, taxPackService)
+	complianceOpsService := complianceops.NewService(logger)
+	complianceops.RegisterComplianceOpsRoutes(router, complianceOpsService)
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)
