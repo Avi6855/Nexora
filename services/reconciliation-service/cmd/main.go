@@ -13,12 +13,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
-	"github.com/nexora/nexora/shared/config"
-	"github.com/nexora/nexora/shared/health"
 	"github.com/nexora/nexora/services/reconciliation-service/internal/events"
+	"github.com/nexora/nexora/services/reconciliation-service/internal/reconnet"
 	"github.com/nexora/nexora/services/reconciliation-service/internal/repository"
 	"github.com/nexora/nexora/services/reconciliation-service/internal/service"
 	"github.com/nexora/nexora/services/reconciliation-service/internal/transport"
+	"github.com/nexora/nexora/shared/config"
+	"github.com/nexora/nexora/shared/health"
 )
 
 func main() {
@@ -61,6 +62,10 @@ func main() {
 	handlers := transport.NewHandlers(reconService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+
+	reconNetSvc := reconnet.NewService()
+	reconNetHandlers := reconnet.NewHandlers(reconNetSvc, logger)
+	reconNetHandlers.RegisterRoutes(router)
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)

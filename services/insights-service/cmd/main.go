@@ -15,7 +15,10 @@ import (
 
 	"github.com/nexora/nexora/services/insights-service/internal/clients"
 	"github.com/nexora/nexora/services/insights-service/internal/events"
+	"github.com/nexora/nexora/services/insights-service/internal/merchants"
 	"github.com/nexora/nexora/services/insights-service/internal/repository"
+	"github.com/nexora/nexora/services/insights-service/internal/resilience"
+	"github.com/nexora/nexora/services/insights-service/internal/salaryplus"
 	"github.com/nexora/nexora/services/insights-service/internal/service"
 	"github.com/nexora/nexora/services/insights-service/internal/transport"
 	"github.com/nexora/nexora/shared/auth"
@@ -104,6 +107,13 @@ func main() {
 	handlers := transport.NewHandlers(intelligence, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+	merchantService := merchants.NewService(logger)
+	merchantHandlers := merchants.NewHandlers(merchantService, logger)
+	merchantHandlers.RegisterRoutes(router)
+	salaryPlusService := salaryplus.NewService(logger)
+	salaryplus.RegisterSalaryPlusRoutes(router, salaryPlusService)
+	resilienceService := resilience.NewService(logger)
+	resilience.RegisterResilienceRoutes(router, resilienceService)
 	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"), "/v1/insights/health", "/metrics").Middleware)
 
 	metricsRegistry := telemetry.NewRegistry()

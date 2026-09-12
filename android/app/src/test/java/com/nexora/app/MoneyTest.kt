@@ -70,7 +70,7 @@ class MoneyTest {
         val minor = amount % 100
         val absMinor = if (minor < 0) -minor else minor
 
-        assertEquals(-11L, major)
+        assertEquals(-10L, major)
         assertEquals(-50L, minor)
         assertEquals(50L, absMinor)
     }

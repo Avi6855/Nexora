@@ -15,6 +15,8 @@ import (
 
 	"github.com/nexora/nexora/services/transfer-service/internal/clients"
 	"github.com/nexora/nexora/services/transfer-service/internal/events"
+	"github.com/nexora/nexora/services/transfer-service/internal/fxtrack"
+	"github.com/nexora/nexora/services/transfer-service/internal/offlineops"
 	"github.com/nexora/nexora/services/transfer-service/internal/repository"
 	"github.com/nexora/nexora/services/transfer-service/internal/service"
 	"github.com/nexora/nexora/services/transfer-service/internal/transport"
@@ -63,6 +65,14 @@ func main() {
 	handlers := transport.NewHandlers(transferService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+
+	offlineService := offlineops.NewService()
+	offlineHandlers := offlineops.NewHandlers(offlineService, logger)
+	offlineHandlers.RegisterRoutes(router)
+
+	fxService := fxtrack.NewService(logger)
+	fxHandlers := fxtrack.NewHandlers(fxService, logger)
+	fxHandlers.RegisterRoutes(router)
 	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"), "/v1/health", "/metrics").Middleware)
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)

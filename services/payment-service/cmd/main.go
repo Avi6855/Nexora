@@ -15,10 +15,13 @@ import (
 
 	"github.com/nexora/nexora/services/payment-service/internal/clients"
 	"github.com/nexora/nexora/services/payment-service/internal/events"
+	"github.com/nexora/nexora/services/payment-service/internal/idem"
+	"github.com/nexora/nexora/services/payment-service/internal/paycycle"
 	"github.com/nexora/nexora/services/payment-service/internal/provider"
 	"github.com/nexora/nexora/services/payment-service/internal/repository"
 	"github.com/nexora/nexora/services/payment-service/internal/service"
 	"github.com/nexora/nexora/services/payment-service/internal/transport"
+	"github.com/nexora/nexora/services/payment-service/internal/txpolicy"
 	"github.com/nexora/nexora/shared/auth"
 	"github.com/nexora/nexora/shared/config"
 	"github.com/nexora/nexora/shared/health"
@@ -98,6 +101,26 @@ func main() {
 	handlers := transport.NewHandlers(paymentService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+
+	// Pay-cycle platform (shared/paycycle): rail cut-off/holiday ETA quotes,
+	// the beneficiary trust lifecycle and approval chains.
+	paycycleLoc, err := time.LoadLocation("Europe/London")
+	if err != nil {
+		paycycleLoc = time.UTC
+	}
+	paycycleService := paycycle.NewService(paycycleLoc)
+	paycycle.NewHandlers(paycycleService, logger).RegisterRoutes(router)
+
+	// Dynamic transaction policy (shared/txpolicy): versioned screening
+	// rules, evaluation, shadow simulation and the audit log.
+	txpolicyService := txpolicy.NewService()
+	txpolicy.NewHandlers(txpolicyService, logger).RegisterRoutes(router)
+
+	// Idempotent API platform (shared/idempotency gateway): dedupe by key,
+	// replay stored responses, re-execute after TTL expiry.
+	idemSvc := idem.NewService(24*time.Hour, logger)
+	idem.NewHandlers(idemSvc, logger).RegisterRoutes(router)
+	logger.Info().Msg("idempotent API platform wired (/v1/idem)")
 
 	// Adaptive load shedding: poll the control plane's dependency graph; when
 	// a critical dependency degrades, non-critical traffic is shed first so

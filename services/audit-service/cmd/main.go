@@ -13,12 +13,15 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
-	"github.com/nexora/nexora/shared/config"
-	"github.com/nexora/nexora/shared/health"
+	"github.com/nexora/nexora/services/audit-service/internal/dataline"
+	"github.com/nexora/nexora/services/audit-service/internal/docintel"
 	"github.com/nexora/nexora/services/audit-service/internal/events"
 	"github.com/nexora/nexora/services/audit-service/internal/repository"
 	"github.com/nexora/nexora/services/audit-service/internal/service"
+	"github.com/nexora/nexora/services/audit-service/internal/taxpack"
 	"github.com/nexora/nexora/services/audit-service/internal/transport"
+	"github.com/nexora/nexora/shared/config"
+	"github.com/nexora/nexora/shared/health"
 )
 
 func main() {
@@ -61,6 +64,12 @@ func main() {
 	handlers := transport.NewHandlers(auditService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+	dataService := dataline.NewService()
+	dataline.RegisterDataLineRoutes(router, dataService)
+	docIntelService := docintel.NewService(logger)
+	docintel.RegisterDocIntelRoutes(router, docIntelService)
+	taxPackService := taxpack.NewService(logger)
+	taxpack.RegisterTaxPackRoutes(router, taxPackService)
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)

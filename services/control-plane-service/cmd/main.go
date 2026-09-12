@@ -13,11 +13,17 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/nexora/nexora/services/control-plane-service/internal/dataplatform"
+	"github.com/nexora/nexora/services/control-plane-service/internal/depgraph"
+	"github.com/nexora/nexora/services/control-plane-service/internal/failover"
+	"github.com/nexora/nexora/services/control-plane-service/internal/releaseops"
 	"github.com/nexora/nexora/services/control-plane-service/internal/repository"
 	"github.com/nexora/nexora/services/control-plane-service/internal/service"
+	"github.com/nexora/nexora/services/control-plane-service/internal/shed"
 	"github.com/nexora/nexora/services/control-plane-service/internal/transport"
 	"github.com/nexora/nexora/shared/config"
+	sharedfailover "github.com/nexora/nexora/shared/failover"
 	"github.com/nexora/nexora/shared/health"
+	sharedshedding "github.com/nexora/nexora/shared/shedding"
 )
 
 func main() {
@@ -34,6 +40,24 @@ func main() {
 	dpSvc := dataplatform.NewService()
 	dpHandlers := dataplatform.NewHandlers(dpSvc, logger)
 	dpHandlers.RegisterRoutes(router)
+	relSvc := releaseops.NewService()
+	relHandlers := releaseops.NewHandlers(relSvc, logger)
+	relHandlers.RegisterRoutes(router)
+
+	// ── Multi-region DR/failover (shared/failover) ───────────────────────
+	failoverSvc := failover.NewService(sharedfailover.DefaultConfig(), logger)
+	failover.NewHandlers(failoverSvc, logger).RegisterRoutes(router)
+	logger.Info().Msg("failover DR controller wired (/v1/failover)")
+
+	// ── Adaptive load shedding (shared/shedding adaptive tier controller) ─
+	shedSvc := shed.NewService(sharedshedding.DefaultAdaptiveConfig(), logger)
+	shed.NewHandlers(shedSvc, logger).RegisterRoutes(router)
+	logger.Info().Msg("adaptive shedding controller wired (/v1/shed)")
+
+	// ── Dependency health graph (live ingestion + throttle advice) ───────
+	depgraphSvc := depgraph.NewService(logger)
+	depgraph.NewHandlers(depgraphSvc, logger).RegisterRoutes(router)
+	logger.Info().Msg("dependency health graph wired (/v1/depgraph)")
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)

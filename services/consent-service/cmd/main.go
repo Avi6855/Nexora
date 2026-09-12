@@ -13,6 +13,9 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
+	consentaigw "github.com/nexora/nexora/services/consent-service/internal/aigateway"
+	"github.com/nexora/nexora/services/consent-service/internal/consentcentre"
+	"github.com/nexora/nexora/services/consent-service/internal/delegated"
 	consentob "github.com/nexora/nexora/services/consent-service/internal/openbanking"
 	"github.com/nexora/nexora/services/consent-service/internal/repository"
 	"github.com/nexora/nexora/services/consent-service/internal/service"
@@ -59,6 +62,15 @@ func main() {
 	obSvc := consentob.NewService()
 	obHandlers := consentob.NewHandlers(obSvc, logger)
 	obHandlers.RegisterRoutes(router)
+	aiSvc := consentaigw.NewService(logger)
+	aiHandlers := consentaigw.NewHandlers(aiSvc, logger)
+	aiHandlers.RegisterRoutes(router)
+	ccSvc := consentcentre.NewService(logger)
+	ccHandlers := consentcentre.NewHandlers(ccSvc, logger)
+	ccHandlers.RegisterRoutes(router)
+	delSvc := delegated.NewService(logger)
+	delHandlers := delegated.NewHandlers(delSvc, logger)
+	delHandlers.RegisterRoutes(router)
 	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"), "/v1/consent/health", "/metrics").Middleware)
 
 	metricsRegistry := telemetry.NewRegistry()

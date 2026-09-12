@@ -13,13 +13,15 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
-	"github.com/nexora/nexora/shared/config"
-	"github.com/nexora/nexora/shared/health"
 	"github.com/nexora/nexora/services/replay-service/internal/clients"
+	"github.com/nexora/nexora/services/replay-service/internal/eventgov"
 	"github.com/nexora/nexora/services/replay-service/internal/events"
+	"github.com/nexora/nexora/services/replay-service/internal/eventsourcing"
 	"github.com/nexora/nexora/services/replay-service/internal/repository"
 	"github.com/nexora/nexora/services/replay-service/internal/service"
 	"github.com/nexora/nexora/services/replay-service/internal/transport"
+	"github.com/nexora/nexora/shared/config"
+	"github.com/nexora/nexora/shared/health"
 )
 
 func main() {
@@ -62,6 +64,10 @@ func main() {
 	handlers := transport.NewHandlers(replayService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+	govService := eventgov.NewService()
+	eventgov.RegisterEventGovRoutes(router, govService)
+	esService := eventsourcing.NewService(logger)
+	eventsourcing.RegisterEventStoreRoutes(router, esService)
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)

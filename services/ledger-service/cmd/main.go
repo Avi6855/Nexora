@@ -14,6 +14,8 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/nexora/nexora/services/ledger-service/internal/events"
+	"github.com/nexora/nexora/services/ledger-service/internal/ledgerguard"
+	"github.com/nexora/nexora/services/ledger-service/internal/multicurrency"
 	"github.com/nexora/nexora/services/ledger-service/internal/repository"
 	"github.com/nexora/nexora/services/ledger-service/internal/service"
 	"github.com/nexora/nexora/services/ledger-service/internal/transport"
@@ -97,6 +99,14 @@ func main() {
 	handlers := transport.NewHandlers(ledgerService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+
+	guardService := ledgerguard.NewService()
+	guardHandlers := ledgerguard.NewHandlers(guardService, logger)
+	guardHandlers.RegisterRoutes(router)
+
+	mcService := multicurrency.NewService(logger)
+	mcHandlers := multicurrency.NewHandlers(mcService, logger)
+	mcHandlers.RegisterRoutes(router)
 
 	// Adaptive load shedding: the ledger is the last line of defence, so it
 	// sheds exploratory traffic first when dependencies degrade.

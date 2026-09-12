@@ -13,12 +13,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
-	"github.com/nexora/nexora/shared/config"
-	"github.com/nexora/nexora/shared/health"
 	"github.com/nexora/nexora/services/incident-service/internal/events"
+	"github.com/nexora/nexora/services/incident-service/internal/incidentops"
 	"github.com/nexora/nexora/services/incident-service/internal/repository"
 	"github.com/nexora/nexora/services/incident-service/internal/service"
 	"github.com/nexora/nexora/services/incident-service/internal/transport"
+	"github.com/nexora/nexora/shared/config"
+	"github.com/nexora/nexora/shared/health"
 )
 
 func main() {
@@ -61,6 +62,9 @@ func main() {
 	handlers := transport.NewHandlers(incidentService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+	incidentOpsSvc := incidentops.NewService(logger)
+	incidentOpsHandlers := incidentops.NewHandlers(incidentOpsSvc, logger)
+	incidentOpsHandlers.RegisterRoutes(router)
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)

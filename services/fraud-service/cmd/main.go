@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 
+	"github.com/nexora/nexora/services/fraud-service/internal/decisionops"
 	"github.com/nexora/nexora/services/fraud-service/internal/events"
 	"github.com/nexora/nexora/services/fraud-service/internal/repository"
 	"github.com/nexora/nexora/services/fraud-service/internal/service"
@@ -63,6 +64,9 @@ func main() {
 	handlers := transport.NewHandlers(fraudService, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+	decisionOpsSvc := decisionops.NewService(logger)
+	decisionOpsHandlers := decisionops.NewHandlers(decisionOpsSvc, logger)
+	decisionOpsHandlers.RegisterRoutes(router)
 	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"), "/v1/health", "/metrics").Middleware)
 
 	// Prometheus /metrics (shared/telemetry). Route-specific request

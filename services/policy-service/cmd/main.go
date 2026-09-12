@@ -16,6 +16,7 @@ import (
 	"github.com/nexora/nexora/services/policy-service/internal/credit"
 	"github.com/nexora/nexora/services/policy-service/internal/events"
 	"github.com/nexora/nexora/services/policy-service/internal/repository"
+	"github.com/nexora/nexora/services/policy-service/internal/rollout"
 	"github.com/nexora/nexora/services/policy-service/internal/service"
 	"github.com/nexora/nexora/services/policy-service/internal/transport"
 	"github.com/nexora/nexora/shared/config"
@@ -74,6 +75,11 @@ func main() {
 	timeTravelHandlers.RegisterRoutes(router)
 	creditSvc := credit.NewService()
 	credit.RegisterCreditRoutes(router, creditSvc)
+
+	// ── Progressive rollout platform (staged flags + auto-rollback) ──
+	rolloutSvc := rollout.NewService(logger)
+	rollout.NewHandlers(rolloutSvc, logger).RegisterRoutes(router)
+	logger.Info().Msg("progressive rollout platform wired (/v1/rollout)")
 
 	healthAddr := fmt.Sprintf(":%d", cfg.Service.Port+100)
 	healthServer := health.NewHealthServer(healthAddr)

@@ -53,6 +53,7 @@ func main() {
 	repo := repository.NewCassandraRepository(session)
 	ledger := clients.NewLedgerClient()
 	disputes := service.NewDisputeService(repo, ledger, logger)
+	orchestrated := service.NewOrchestrationService(logger)
 
 	// Deadline ticker: the workflow's clock. Every minute, cases whose stage
 	// deadline passed advance (evidence overdue → review, merchant silence →
@@ -80,6 +81,8 @@ func main() {
 	handlers := transport.NewHandlers(disputes, logger)
 	router := mux.NewRouter()
 	handlers.RegisterRoutes(router)
+	orchestrationHandlers := transport.NewOrchestrationHandlers(orchestrated, logger)
+	orchestrationHandlers.RegisterRoutes(router)
 	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"), "/v1/disputes/health", "/metrics").Middleware)
 
 	metricsRegistry := telemetry.NewRegistry()

@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/nexora/nexora/services/account-service/internal/events"
+	"github.com/nexora/nexora/services/account-service/internal/household"
 	"github.com/nexora/nexora/services/account-service/internal/mortgage"
 	"github.com/nexora/nexora/services/account-service/internal/repository"
 	"github.com/nexora/nexora/services/account-service/internal/service"
@@ -69,6 +70,9 @@ func main() {
 	mortgageService := mortgage.NewService()
 	mortgageHandlers := mortgage.NewHandlers(mortgageService, logger)
 	mortgageHandlers.RegisterRoutes(router)
+	householdService := household.NewService(logger)
+	householdHandlers := household.NewHandlers(householdService, logger)
+	householdHandlers.RegisterRoutes(router)
 	router.Use(auth.NewAuthenticator(cfg.Auth.JWTSecret, os.Getenv("INTERNAL_TOKEN"), "/v1/health", "/metrics").Middleware)
 
 	// Prometheus /metrics (shared/telemetry). Route-specific request
