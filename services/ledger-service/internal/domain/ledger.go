@@ -15,6 +15,12 @@ const (
 	EntryTypeCredit EntryType = "CREDIT"
 )
 
+// ClearingAccountID is the suspense account on the other side of every
+// customer money movement. Every entry that changes a customer balance has a
+// counter-leg here, which is what keeps total debits equal to total credits
+// across the whole ledger (the financial invariant the chaos checker asserts).
+var ClearingAccountID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+
 type EntryDirection string
 
 const (
@@ -106,7 +112,7 @@ func InferCategory(description string) Category {
 }
 
 var (
-	ErrInsufficientFunds    = errors.New("insufficient funds")
+	ErrInsufficientFunds = errors.New("insufficient funds")
 	// ErrAccountLocked refuses a money-OUT booking against an account in
 	// emergency lockdown. Money-IN credits are never blocked.
 	ErrAccountLocked = errors.New("account is locked: outbound movement is temporarily disabled")
@@ -114,16 +120,16 @@ var (
 	// ledger chain the invariant monitor has frozen: state cannot be trusted
 	// until an engineer repairs the entries and clears the guard.
 	ErrAccountIntegrityViolation = errors.New("account is frozen by the ledger invariant monitor: pending integrity repair")
-	ErrReservationNotFound  = errors.New("reservation not found")
-	ErrReservationNotActive = errors.New("reservation is not active")
-	ErrReservationExpired   = errors.New("reservation has expired")
-	ErrTransactionNotFound  = errors.New("transaction not found")
-	ErrAccountNotFound      = errors.New("account not found")
-	ErrIdempotencyConflict  = errors.New("idempotency key already used with different request")
-	ErrDoubleEntryMismatch  = errors.New("total debits do not equal total credits")
-	ErrInvalidAmount        = errors.New("amount must be positive")
-	ErrInvalidCurrency      = errors.New("currency mismatch between debit and credit entries")
-	ErrDuplicateEntry       = errors.New("duplicate entry detected")
+	ErrReservationNotFound       = errors.New("reservation not found")
+	ErrReservationNotActive      = errors.New("reservation is not active")
+	ErrReservationExpired        = errors.New("reservation has expired")
+	ErrTransactionNotFound       = errors.New("transaction not found")
+	ErrAccountNotFound           = errors.New("account not found")
+	ErrIdempotencyConflict       = errors.New("idempotency key already used with different request")
+	ErrDoubleEntryMismatch       = errors.New("total debits do not equal total credits")
+	ErrInvalidAmount             = errors.New("amount must be positive")
+	ErrInvalidCurrency           = errors.New("currency mismatch between debit and credit entries")
+	ErrDuplicateEntry            = errors.New("duplicate entry detected")
 )
 
 type LedgerEntry struct {
@@ -263,6 +269,11 @@ type IntegrityEventType string
 const (
 	IntegrityEventViolation IntegrityEventType = "VIOLATION"
 	IntegrityEventCleared   IntegrityEventType = "CLEARED"
+	// IntegrityEventBookingRefused records a money movement the ledger refused
+	// to write (or could not write). It is not a corruption of the ledger — the
+	// point is that the refusal is visible to an operator instead of existing
+	// only as a log line that scrolls away.
+	IntegrityEventBookingRefused IntegrityEventType = "BOOKING_REFUSED"
 )
 
 // IntegrityGuard is the per-account freeze row the monitor sets when it
@@ -288,25 +299,25 @@ type IntegrityEvent struct {
 
 // IntegrityScanResult summarises one account's monitor sweep.
 type IntegrityScanResult struct {
-	AccountID          uuid.UUID `json:"account_id"`
-	EntriesChecked     int       `json:"entries_checked"`
-	ChainContinuous    bool      `json:"chain_continuous"`
-	RecomputeBalanced  bool      `json:"recompute_balanced"`
-	Violation          bool      `json:"violation"`
-	FirstBadEntryID    uuid.UUID `json:"first_bad_entry_id,omitempty"`
-	Message            string    `json:"message,omitempty"`
-	GuardApplied       bool      `json:"guard_applied"`
-	IncidentCreated    bool      `json:"incident_created"`
+	AccountID         uuid.UUID `json:"account_id"`
+	EntriesChecked    int       `json:"entries_checked"`
+	ChainContinuous   bool      `json:"chain_continuous"`
+	RecomputeBalanced bool      `json:"recompute_balanced"`
+	Violation         bool      `json:"violation"`
+	FirstBadEntryID   uuid.UUID `json:"first_bad_entry_id,omitempty"`
+	Message           string    `json:"message,omitempty"`
+	GuardApplied      bool      `json:"guard_applied"`
+	IncidentCreated   bool      `json:"incident_created"`
 }
 
 // IntegrityScanSummary is the aggregate of a full sweep.
 type IntegrityScanSummary struct {
-	AccountsScanned int                     `json:"accounts_scanned"`
-	Violations      int                     `json:"violations"`
-	GuardsApplied   int                     `json:"guards_applied"`
-	IncidentsRaised int                     `json:"incidents_raised"`
-	CheckedAt       time.Time               `json:"checked_at"`
-	Results         []*IntegrityScanResult   `json:"results"`
+	AccountsScanned int                    `json:"accounts_scanned"`
+	Violations      int                    `json:"violations"`
+	GuardsApplied   int                    `json:"guards_applied"`
+	IncidentsRaised int                    `json:"incidents_raised"`
+	CheckedAt       time.Time              `json:"checked_at"`
+	Results         []*IntegrityScanResult `json:"results"`
 }
 
 type ErrorResponse struct {
@@ -394,6 +405,37 @@ func (r *TransferRequest) Validate() error {
 	}
 	if r.SourceAccountID == r.DestinationAccountID {
 		return errors.New("source and destination accounts must be different")
+	}
+	return nil
+}
+
+// RefundRequest credits an account with money that came from outside the
+// customer base — an acquirer refund of a settled card presentment. There is
+// no customer account to debit, so the counter-leg is the suspense clearing
+// account: the exact mirror of the settled card transaction it reverses.
+type RefundRequest struct {
+	IdempotencyKey string    `json:"idempotency_key"`
+	AccountID      uuid.UUID `json:"account_id"`
+	Amount         int64     `json:"amount"`
+	Currency       string    `json:"currency"`
+	Description    string    `json:"description"`
+}
+
+func (r *RefundRequest) Validate() error {
+	if r.IdempotencyKey == "" {
+		return errors.New("idempotency_key is required")
+	}
+	if r.Amount <= 0 {
+		return ErrInvalidAmount
+	}
+	if r.Currency == "" {
+		return errors.New("currency is required")
+	}
+	if r.AccountID == uuid.Nil {
+		return errors.New("account_id is required")
+	}
+	if r.AccountID == ClearingAccountID {
+		return errors.New("the clearing account cannot receive a customer refund")
 	}
 	return nil
 }

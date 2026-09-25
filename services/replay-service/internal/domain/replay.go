@@ -42,21 +42,21 @@ type HistoricalState struct {
 }
 
 type ReplayResult struct {
-	ReplayID        uuid.UUID     `json:"replay_id"`
-	OriginalResult  json.RawMessage `json:"original_result"`
-	ReplayedResult  json.RawMessage `json:"replayed_result"`
-	Differences     []ReplayDifference `json:"differences"`
-	Steps           []ReplayStep  `json:"steps"`
-	Deterministic   bool          `json:"deterministic"`
-	TotalEvents     int           `json:"total_events"`
-	ReplayedAt      time.Time     `json:"replayed_at"`
+	ReplayID       uuid.UUID          `json:"replay_id"`
+	OriginalResult json.RawMessage    `json:"original_result"`
+	ReplayedResult json.RawMessage    `json:"replayed_result"`
+	Differences    []ReplayDifference `json:"differences"`
+	Steps          []ReplayStep       `json:"steps"`
+	Deterministic  bool               `json:"deterministic"`
+	TotalEvents    int                `json:"total_events"`
+	ReplayedAt     time.Time          `json:"replayed_at"`
 }
 
 type ReplayDifference struct {
-	Field      string `json:"field"`
-	Original   string `json:"original"`
-	Replayed   string `json:"replayed"`
-	StepID     int    `json:"step_id"`
+	Field    string `json:"field"`
+	Original string `json:"original"`
+	Replayed string `json:"replayed"`
+	StepID   int    `json:"step_id"`
 }
 
 type ReplayTransactionRequest struct {

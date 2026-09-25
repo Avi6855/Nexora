@@ -1,4 +1,4 @@
-.PHONY: dev-up dev-down build test test-unit test-integration test-financial test-contract test-shared test-all lint init-db logs clean fmt
+.PHONY: dev-up dev-down build test test-unit test-integration test-financial test-contract test-shared test-modules test-all lint init-db logs clean fmt
 
 dev-up:
 	docker-compose up -d
@@ -11,6 +11,7 @@ build:
 
 test:
 	go test ./...
+	@$(MAKE) --no-print-directory test-modules
 
 test-unit:
 	go test ./tests/unit/...
@@ -34,9 +35,18 @@ test-contract:
 # card network gateway, KYC engine, open-finance, data-platform health and
 # lifecycle, network engineering, engineering platform, operational economics.
 test-shared:
-	cd shared && go test ./calc/... ./verify/... ./latency/... ./concurrency/... ./retry/... ./handover/... ./cardnet/... ./kyc/... ./openfinance/... ./datainfra/... ./neteng/... ./engplatform/... ./economics/... ./cash/... ./cheques/... ./payees/... ./statements/... ./export/... ./search/... ./support/... ./vendors/... ./compliance/... ./cards/... ./credit/... ./mortgage/... ./investments/... ./lifeevents/... ./identity/... ./openbanking/... ./dataplatform/...
+	cd shared && go test ./...
 
-test-all: test-unit test-shared test-integration test-financial test-contract
+# Every Go module in the repository. Services are separate modules, so a
+# root-level `go test ./...` silently skips all of them; this loops instead.
+test-modules:
+	@set -e; \
+	for mod in $$(find services -name go.mod -exec dirname {} \; | sort); do \
+		echo "==> go test $$mod"; \
+		(cd $$mod && go test ./...); \
+	done
+
+test-all: test-unit test-shared test-modules test-contract
 
 lint:
 	go vet ./...

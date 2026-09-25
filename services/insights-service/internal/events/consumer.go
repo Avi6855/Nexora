@@ -45,10 +45,10 @@ type paymentEvent struct {
 // InsightsConsumer turns captured card spend into RecordSpend calls and
 // settled payments into RecordIncome calls.
 type InsightsConsumer struct {
-	onSpend   func(ctx context.Context, ev *domain.SpendEvent) error
-	onIncome  func(ctx context.Context, ev *domain.SpendEvent) error
+	onSpend      func(ctx context.Context, ev *domain.SpendEvent) error
+	onIncome     func(ctx context.Context, ev *domain.SpendEvent) error
 	onSpendCheck func(ctx context.Context, ev *domain.SpendEvent) (bool, error)
-	logger    zerolog.Logger
+	logger       zerolog.Logger
 }
 
 // NewInsightsConsumer wires the consumer to the intelligence service.

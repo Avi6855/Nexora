@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 	"github.com/nexora/nexora/services/policy-service/internal/domain"
 	"github.com/nexora/nexora/services/policy-service/internal/service"
+	"github.com/rs/zerolog"
 )
 
 // ── In-memory fakes (Cassandra-free unit coverage of the replay logic) ──────
@@ -89,7 +89,7 @@ func (f *fakePolicyRepo) GetActivePolicies(_ context.Context) ([]*domain.Policy,
 func (f *fakePolicyRepo) GetShadowPolicies(_ context.Context) ([]*domain.Policy, error) {
 	return nil, nil
 }
-func (f *fakePolicyRepo) Update(_ context.Context, _ *domain.Policy) error    { return nil }
+func (f *fakePolicyRepo) Update(_ context.Context, _ *domain.Policy) error { return nil }
 func (f *fakePolicyRepo) UpdateStatus(_ context.Context, _ uuid.UUID, _ domain.PolicyStatus) error {
 	return nil
 }
@@ -156,8 +156,8 @@ func TestTimeTravelReconstructsHistoricalDecision(t *testing.T) {
 	svc, _ := newTT(t, []*domain.Policy{policy}, map[uuid.UUID][]domain.PolicyVersion{policyID: {v1, v2}}, nil)
 
 	pctx := domain.PaymentContext{
-		UserID:  uuid.New(),
-		Amount:  20000, // £200: blocked under v1, allowed under v2
+		UserID:   uuid.New(),
+		Amount:   20000, // £200: blocked under v1, allowed under v2
 		Currency: "GBP",
 	}
 
@@ -279,8 +279,8 @@ func TestTimeTravelNonDeterministicWhenNoSnapshot(t *testing.T) {
 func TestRecordAndFetchHistoricalDecision(t *testing.T) {
 	svc, fh := newTT(t, nil, nil, nil)
 	rec, err := svc.RecordDecision(context.Background(), domain.RecordHistoricalDecisionRequest{
-		PaymentID:     "pay-42",
-		FinalDecision: domain.PolicyDecisionAllow,
+		PaymentID:      "pay-42",
+		FinalDecision:  domain.PolicyDecisionAllow,
 		PolicyVersions: []uuid.UUID{uuid.New()},
 	})
 	if err != nil {

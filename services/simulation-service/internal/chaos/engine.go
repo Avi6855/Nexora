@@ -14,15 +14,15 @@ import (
 type FaultType string
 
 const (
-	FaultServiceKill        FaultType = "SERVICE_KILL"
-	FaultKafkaDelay         FaultType = "KAFKA_DELAY"
-	FaultKafkaDuplicate     FaultType = "KAFKA_DUPLICATE"
-	FaultCassandraDelay     FaultType = "CASSANDRA_DELAY"
-	FaultCassandraUnavail   FaultType = "CASSANDRA_UNAVAILABLE"
-	FaultProviderTimeout    FaultType = "PROVIDER_TIMEOUT"
-	FaultProvider503        FaultType = "PROVIDER_503"
-	FaultNetworkTimeout     FaultType = "NETWORK_TIMEOUT"
-	FaultRandomPodKill      FaultType = "RANDOM_POD_KILL"
+	FaultServiceKill      FaultType = "SERVICE_KILL"
+	FaultKafkaDelay       FaultType = "KAFKA_DELAY"
+	FaultKafkaDuplicate   FaultType = "KAFKA_DUPLICATE"
+	FaultCassandraDelay   FaultType = "CASSANDRA_DELAY"
+	FaultCassandraUnavail FaultType = "CASSANDRA_UNAVAILABLE"
+	FaultProviderTimeout  FaultType = "PROVIDER_TIMEOUT"
+	FaultProvider503      FaultType = "PROVIDER_503"
+	FaultNetworkTimeout   FaultType = "NETWORK_TIMEOUT"
+	FaultRandomPodKill    FaultType = "RANDOM_POD_KILL"
 )
 
 type ExperimentStatus string
@@ -35,27 +35,27 @@ const (
 )
 
 type Experiment struct {
-	ID             string                 `json:"id"`
-	Target         string                 `json:"target"`
-	FaultType      FaultType              `json:"fault_type"`
-	Duration       time.Duration          `json:"duration"`
-	ExpectedResult string                 `json:"expected_result"`
-	ActualResult   string                 `json:"actual_result"`
-	RecoveryTime   time.Duration          `json:"recovery_time"`
-	Status         ExperimentStatus       `json:"status"`
-	Metadata       map[string]string      `json:"metadata"`
-	CreatedAt      time.Time              `json:"created_at"`
-	StartedAt      *time.Time             `json:"started_at,omitempty"`
-	CompletedAt    *time.Time             `json:"completed_at,omitempty"`
+	ID             string            `json:"id"`
+	Target         string            `json:"target"`
+	FaultType      FaultType         `json:"fault_type"`
+	Duration       time.Duration     `json:"duration"`
+	ExpectedResult string            `json:"expected_result"`
+	ActualResult   string            `json:"actual_result"`
+	RecoveryTime   time.Duration     `json:"recovery_time"`
+	Status         ExperimentStatus  `json:"status"`
+	Metadata       map[string]string `json:"metadata"`
+	CreatedAt      time.Time         `json:"created_at"`
+	StartedAt      *time.Time        `json:"started_at,omitempty"`
+	CompletedAt    *time.Time        `json:"completed_at,omitempty"`
 }
 
 type ExperimentResult struct {
-	ExperimentID  string        `json:"experiment_id"`
-	Success       bool          `json:"success"`
-	Duration      time.Duration `json:"duration"`
-	RecoveryTime  time.Duration `json:"recovery_time"`
-	ErrorMessage  string        `json:"error_message,omitempty"`
-	AuditTrail    []AuditEntry  `json:"audit_trail"`
+	ExperimentID string        `json:"experiment_id"`
+	Success      bool          `json:"success"`
+	Duration     time.Duration `json:"duration"`
+	RecoveryTime time.Duration `json:"recovery_time"`
+	ErrorMessage string        `json:"error_message,omitempty"`
+	AuditTrail   []AuditEntry  `json:"audit_trail"`
 }
 
 type AuditEntry struct {
@@ -71,12 +71,12 @@ type FaultInjector interface {
 }
 
 type ChaosEngine struct {
-	injector  FaultInjector
-	checker   FinancialInvariantChecker
-	logger    zerolog.Logger
+	injector    FaultInjector
+	checker     FinancialInvariantChecker
+	logger      zerolog.Logger
 	experiments map[string]*Experiment
-	mu        sync.RWMutex
-	auditLog  []AuditEntry
+	mu          sync.RWMutex
+	auditLog    []AuditEntry
 }
 
 func NewChaosEngine(injector FaultInjector, checker FinancialInvariantChecker, logger zerolog.Logger) *ChaosEngine {

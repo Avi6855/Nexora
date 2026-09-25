@@ -23,6 +23,11 @@ const (
 	EventTypePaymentUnknown    EventType = "payment.unknown"
 	EventTypePaymentReversed   EventType = "payment.reversed"
 	EventTypePaymentCancelled  EventType = "payment.cancelled"
+	// EventTypePaymentReservationReleased reports that a hold was given back
+	// (payment failed or was cancelled before money moved). It is deliberately
+	// NOT payment.reversed: a reversed payment is money being returned to the
+	// customer, and a consumer acting on that would credit them a second time.
+	EventTypePaymentReservationReleased EventType = "payment.reservation.released"
 )
 
 type PaymentEventEnvelope struct {
@@ -62,10 +67,10 @@ type EventPublisher interface {
 }
 
 type KafkaEventPublisher struct {
-	producerID   string
-	topicPrefix  string
-	logger       zerolog.Logger
-	producer     sarama.AsyncProducer
+	producerID  string
+	topicPrefix string
+	logger      zerolog.Logger
+	producer    sarama.AsyncProducer
 }
 
 type KafkaPublisherConfig struct {

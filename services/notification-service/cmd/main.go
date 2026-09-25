@@ -69,6 +69,8 @@ func main() {
 		"nexora.card.authorization.declined",
 		"nexora.card.authorization.captured",
 		"nexora.card.authorization.voided",
+		"nexora.card.authorization.challenged",
+		"nexora.card.authorization.refunded",
 		"nexora.payment.confirmed",
 		"nexora.payment.settled",
 		"nexora.insights.alerts",

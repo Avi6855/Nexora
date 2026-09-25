@@ -35,11 +35,11 @@ var platformGraph = []domain.DependencyEdge{
 
 // DependencyService maintains live health + renders the graph.
 type DependencyService struct {
-	repo     repository.HealthRepository
-	health   *HealthService
-	logger   zerolog.Logger
+	repo   repository.HealthRepository
+	health *HealthService
+	logger zerolog.Logger
 
-	mu       sync.RWMutex
+	mu sync.RWMutex
 	// shedding[service] = current % of non-critical traffic to shed.
 	shedding map[string]int
 }

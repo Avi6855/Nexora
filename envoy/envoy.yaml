@@ -541,7 +541,7 @@ static_resources:
                   address:
                     socket_address:
                       address: consent-service
-                      port_value: 8097
+                      port_value: 8100
       health_checks:
         - timeout: 5s
           interval: 10s

@@ -8,11 +8,11 @@ import (
 type ChangeType string
 
 const (
-	ChangeTypeConfig      ChangeType = "CONFIG"
-	ChangeTypeCode        ChangeType = "CODE"
+	ChangeTypeConfig         ChangeType = "CONFIG"
+	ChangeTypeCode           ChangeType = "CODE"
 	ChangeTypeInfrastructure ChangeType = "INFRASTRUCTURE"
-	ChangeTypeSchema      ChangeType = "SCHEMA"
-	ChangeTypeDependency  ChangeType = "DEPENDENCY"
+	ChangeTypeSchema         ChangeType = "SCHEMA"
+	ChangeTypeDependency     ChangeType = "DEPENDENCY"
 )
 
 type RiskLevel string
@@ -25,33 +25,33 @@ const (
 )
 
 type ServiceInfo struct {
-	Name          string   `json:"name"`
-	DependsOn     []string `json:"depends_on"`
-	DependedBy    []string `json:"depended_by"`
-	APIsExposed   []string `json:"apis_exposed"`
-	TopicsUsed    []string `json:"topics_used"`
-	PaymentPaths  []string `json:"payment_paths"`
+	Name         string   `json:"name"`
+	DependsOn    []string `json:"depends_on"`
+	DependedBy   []string `json:"depended_by"`
+	APIsExposed  []string `json:"apis_exposed"`
+	TopicsUsed   []string `json:"topics_used"`
+	PaymentPaths []string `json:"payment_paths"`
 }
 
 type ChangeRequest struct {
-	ChangeType       ChangeType `json:"change_type"`
-	AffectedServices []string   `json:"affected_services"`
-	Description      string     `json:"description"`
+	ChangeType       ChangeType        `json:"change_type"`
+	AffectedServices []string          `json:"affected_services"`
+	Description      string            `json:"description"`
 	Config           map[string]string `json:"config,omitempty"`
 }
 
 type BlastRadiusResult struct {
-	ChangeType       ChangeType          `json:"change_type"`
-	AffectedAPIs     []string            `json:"affected_apis"`
-	AffectedTopics   []string            `json:"affected_topics"`
-	AffectedPayments []string            `json:"affected_payments"`
-	AffectedServices []string            `json:"affected_services"`
-	RiskLevel        RiskLevel           `json:"risk_level"`
-	RiskScore        float64             `json:"risk_score"`
-	EstimatedUsers   int                 `json:"estimated_users_affected"`
-	RevenueAtRisk    float64             `json:"revenue_at_risk"`
-	Recommendations  []string            `json:"recommendations"`
-	Timestamp        time.Time           `json:"timestamp"`
+	ChangeType       ChangeType `json:"change_type"`
+	AffectedAPIs     []string   `json:"affected_apis"`
+	AffectedTopics   []string   `json:"affected_topics"`
+	AffectedPayments []string   `json:"affected_payments"`
+	AffectedServices []string   `json:"affected_services"`
+	RiskLevel        RiskLevel  `json:"risk_level"`
+	RiskScore        float64    `json:"risk_score"`
+	EstimatedUsers   int        `json:"estimated_users_affected"`
+	RevenueAtRisk    float64    `json:"revenue_at_risk"`
+	Recommendations  []string   `json:"recommendations"`
+	Timestamp        time.Time  `json:"timestamp"`
 }
 
 type BlastRadiusAnalyzer struct {
@@ -69,140 +69,140 @@ func NewBlastRadiusAnalyzer() *BlastRadiusAnalyzer {
 
 func (a *BlastRadiusAnalyzer) loadDefaultServices() {
 	a.services["identity-service"] = &ServiceInfo{
-		Name:          "identity-service",
-		DependsOn:     []string{},
-		DependedBy:    []string{"user-service", "payment-service"},
-		APIsExposed:   []string{"/api/v1/auth/login", "/api/v1/auth/refresh"},
-		TopicsUsed:    []string{"nexora.user.registered"},
-		PaymentPaths:  []string{},
+		Name:         "identity-service",
+		DependsOn:    []string{},
+		DependedBy:   []string{"user-service", "payment-service"},
+		APIsExposed:  []string{"/api/v1/auth/login", "/api/v1/auth/refresh"},
+		TopicsUsed:   []string{"nexora.user.registered"},
+		PaymentPaths: []string{},
 	}
 	a.services["user-service"] = &ServiceInfo{
-		Name:          "user-service",
-		DependsOn:     []string{"identity-service"},
-		DependedBy:    []string{"account-service", "payment-service"},
-		APIsExposed:   []string{"/api/v1/users"},
-		TopicsUsed:    []string{"nexora.user.created"},
-		PaymentPaths:  []string{},
+		Name:         "user-service",
+		DependsOn:    []string{"identity-service"},
+		DependedBy:   []string{"account-service", "payment-service"},
+		APIsExposed:  []string{"/api/v1/users"},
+		TopicsUsed:   []string{"nexora.user.created"},
+		PaymentPaths: []string{},
 	}
 	a.services["account-service"] = &ServiceInfo{
-		Name:          "account-service",
-		DependsOn:     []string{"user-service", "ledger-service"},
-		DependedBy:    []string{"payment-service", "transfer-service"},
-		APIsExposed:   []string{"/api/v1/accounts"},
-		TopicsUsed:    []string{"nexora.account.created"},
-		PaymentPaths:  []string{},
+		Name:         "account-service",
+		DependsOn:    []string{"user-service", "ledger-service"},
+		DependedBy:   []string{"payment-service", "transfer-service"},
+		APIsExposed:  []string{"/api/v1/accounts"},
+		TopicsUsed:   []string{"nexora.account.created"},
+		PaymentPaths: []string{},
 	}
 	a.services["ledger-service"] = &ServiceInfo{
-		Name:          "ledger-service",
-		DependsOn:     []string{},
-		DependedBy:    []string{"payment-service", "transfer-service", "reconciliation-service"},
-		APIsExposed:   []string{"/api/v1/ledger"},
-		TopicsUsed:    []string{"nexora.ledger.entry"},
-		PaymentPaths:  []string{"payment", "transfer"},
+		Name:         "ledger-service",
+		DependsOn:    []string{},
+		DependedBy:   []string{"payment-service", "transfer-service", "reconciliation-service"},
+		APIsExposed:  []string{"/api/v1/ledger"},
+		TopicsUsed:   []string{"nexora.ledger.entry"},
+		PaymentPaths: []string{"payment", "transfer"},
 	}
 	a.services["payment-service"] = &ServiceInfo{
-		Name:          "payment-service",
-		DependsOn:     []string{"identity-service", "user-service", "account-service", "ledger-service", "fraud-service", "policy-service"},
-		DependedBy:    []string{"notification-service", "reconciliation-service"},
-		APIsExposed:   []string{"/api/v1/payments"},
-		TopicsUsed:    []string{"nexora.payment.created", "nexora.payment.confirmed", "nexora.payment.failed", "nexora.payment.settled"},
-		PaymentPaths:  []string{"card_payment", "bank_transfer", "internal_transfer"},
+		Name:         "payment-service",
+		DependsOn:    []string{"identity-service", "user-service", "account-service", "ledger-service", "fraud-service", "policy-service"},
+		DependedBy:   []string{"notification-service", "reconciliation-service"},
+		APIsExposed:  []string{"/api/v1/payments"},
+		TopicsUsed:   []string{"nexora.payment.created", "nexora.payment.confirmed", "nexora.payment.failed", "nexora.payment.settled"},
+		PaymentPaths: []string{"card_payment", "bank_transfer", "internal_transfer"},
 	}
 	a.services["transfer-service"] = &ServiceInfo{
-		Name:          "transfer-service",
-		DependsOn:     []string{"account-service", "ledger-service"},
-		DependedBy:    []string{"notification-service"},
-		APIsExposed:   []string{"/api/v1/transfers"},
-		TopicsUsed:    []string{"nexora.transfer.created"},
-		PaymentPaths:  []string{"internal_transfer"},
+		Name:         "transfer-service",
+		DependsOn:    []string{"account-service", "ledger-service"},
+		DependedBy:   []string{"notification-service"},
+		APIsExposed:  []string{"/api/v1/transfers"},
+		TopicsUsed:   []string{"nexora.transfer.created"},
+		PaymentPaths: []string{"internal_transfer"},
 	}
 	a.services["fraud-service"] = &ServiceInfo{
-		Name:          "fraud-service",
-		DependsOn:     []string{},
-		DependedBy:    []string{"payment-service"},
-		APIsExposed:   []string{"/api/v1/fraud/check"},
-		TopicsUsed:    []string{"nexora.fraud.alert"},
-		PaymentPaths:  []string{"payment"},
+		Name:         "fraud-service",
+		DependsOn:    []string{},
+		DependedBy:   []string{"payment-service"},
+		APIsExposed:  []string{"/api/v1/fraud/check"},
+		TopicsUsed:   []string{"nexora.fraud.alert"},
+		PaymentPaths: []string{"payment"},
 	}
 	a.services["policy-service"] = &ServiceInfo{
-		Name:          "policy-service",
-		DependsOn:     []string{},
-		DependedBy:    []string{"payment-service", "transfer-service"},
-		APIsExposed:   []string{"/api/v1/policy/evaluate"},
-		TopicsUsed:    []string{"nexora.policy.violation"},
-		PaymentPaths:  []string{"payment", "transfer"},
+		Name:         "policy-service",
+		DependsOn:    []string{},
+		DependedBy:   []string{"payment-service", "transfer-service"},
+		APIsExposed:  []string{"/api/v1/policy/evaluate"},
+		TopicsUsed:   []string{"nexora.policy.violation"},
+		PaymentPaths: []string{"payment", "transfer"},
 	}
 	a.services["notification-service"] = &ServiceInfo{
-		Name:          "notification-service",
-		DependsOn:     []string{"payment-service", "transfer-service", "user-service"},
-		DependedBy:    []string{},
-		APIsExposed:   []string{"/api/v1/notifications"},
-		TopicsUsed:    []string{"nexora.notification.send"},
-		PaymentPaths:  []string{},
+		Name:         "notification-service",
+		DependsOn:    []string{"payment-service", "transfer-service", "user-service"},
+		DependedBy:   []string{},
+		APIsExposed:  []string{"/api/v1/notifications"},
+		TopicsUsed:   []string{"nexora.notification.send"},
+		PaymentPaths: []string{},
 	}
 	a.services["reconciliation-service"] = &ServiceInfo{
-		Name:          "reconciliation-service",
-		DependsOn:     []string{"ledger-service", "payment-service"},
-		DependedBy:    []string{},
-		APIsExposed:   []string{"/api/v1/reconciliation"},
-		TopicsUsed:    []string{"nexora.reconciliation.check"},
-		PaymentPaths:  []string{"reconciliation"},
+		Name:         "reconciliation-service",
+		DependsOn:    []string{"ledger-service", "payment-service"},
+		DependedBy:   []string{},
+		APIsExposed:  []string{"/api/v1/reconciliation"},
+		TopicsUsed:   []string{"nexora.reconciliation.check"},
+		PaymentPaths: []string{"reconciliation"},
 	}
 	a.services["simulation-service"] = &ServiceInfo{
-		Name:          "simulation-service",
-		DependsOn:     []string{"payment-service"},
-		DependedBy:    []string{"control-plane-service"},
-		APIsExposed:   []string{"/api/v1/simulations"},
-		TopicsUsed:    []string{},
-		PaymentPaths:  []string{},
+		Name:         "simulation-service",
+		DependsOn:    []string{"payment-service"},
+		DependedBy:   []string{"control-plane-service"},
+		APIsExposed:  []string{"/api/v1/simulations"},
+		TopicsUsed:   []string{},
+		PaymentPaths: []string{},
 	}
 	a.services["control-plane-service"] = &ServiceInfo{
-		Name:          "control-plane-service",
-		DependsOn:     []string{"simulation-service"},
-		DependedBy:    []string{},
-		APIsExposed:   []string{"/api/v1/health", "/api/v1/system"},
-		TopicsUsed:    []string{},
-		PaymentPaths:  []string{},
+		Name:         "control-plane-service",
+		DependsOn:    []string{"simulation-service"},
+		DependedBy:   []string{},
+		APIsExposed:  []string{"/api/v1/health", "/api/v1/system"},
+		TopicsUsed:   []string{},
+		PaymentPaths: []string{},
 	}
 	a.services["audit-service"] = &ServiceInfo{
-		Name:          "audit-service",
-		DependsOn:     []string{},
-		DependedBy:    []string{},
-		APIsExposed:   []string{"/api/v1/audit"},
-		TopicsUsed:    []string{"nexora.audit.event"},
-		PaymentPaths:  []string{},
+		Name:         "audit-service",
+		DependsOn:    []string{},
+		DependedBy:   []string{},
+		APIsExposed:  []string{"/api/v1/audit"},
+		TopicsUsed:   []string{"nexora.audit.event"},
+		PaymentPaths: []string{},
 	}
 	a.services["incident-service"] = &ServiceInfo{
-		Name:          "incident-service",
-		DependsOn:     []string{},
-		DependedBy:    []string{"control-plane-service"},
-		APIsExposed:   []string{"/api/v1/incidents"},
-		TopicsUsed:    []string{"nexora.incident.created"},
-		PaymentPaths:  []string{},
+		Name:         "incident-service",
+		DependsOn:    []string{},
+		DependedBy:   []string{"control-plane-service"},
+		APIsExposed:  []string{"/api/v1/incidents"},
+		TopicsUsed:   []string{"nexora.incident.created"},
+		PaymentPaths: []string{},
 	}
 	a.services["card-service"] = &ServiceInfo{
-		Name:          "card-service",
-		DependsOn:     []string{"account-service", "identity-service"},
-		DependedBy:    []string{"payment-service"},
-		APIsExposed:   []string{"/api/v1/cards"},
-		TopicsUsed:    []string{"nexora.card.issued"},
-		PaymentPaths:  []string{"card_payment"},
+		Name:         "card-service",
+		DependsOn:    []string{"account-service", "identity-service"},
+		DependedBy:   []string{"payment-service"},
+		APIsExposed:  []string{"/api/v1/cards"},
+		TopicsUsed:   []string{"nexora.card.issued"},
+		PaymentPaths: []string{"card_payment"},
 	}
 	a.services["pot-service"] = &ServiceInfo{
-		Name:          "pot-service",
-		DependsOn:     []string{"account-service"},
-		DependedBy:    []string{},
-		APIsExposed:   []string{"/api/v1/pots"},
-		TopicsUsed:    []string{"nexora.pot.created"},
-		PaymentPaths:  []string{},
+		Name:         "pot-service",
+		DependsOn:    []string{"account-service"},
+		DependedBy:   []string{},
+		APIsExposed:  []string{"/api/v1/pots"},
+		TopicsUsed:   []string{"nexora.pot.created"},
+		PaymentPaths: []string{},
 	}
 	a.services["replay-service"] = &ServiceInfo{
-		Name:          "replay-service",
-		DependsOn:     []string{"payment-service", "ledger-service"},
-		DependedBy:    []string{"control-plane-service"},
-		APIsExposed:   []string{"/api/v1/replay"},
-		TopicsUsed:    []string{},
-		PaymentPaths:  []string{},
+		Name:         "replay-service",
+		DependsOn:    []string{"payment-service", "ledger-service"},
+		DependedBy:   []string{"control-plane-service"},
+		APIsExposed:  []string{"/api/v1/replay"},
+		TopicsUsed:   []string{},
+		PaymentPaths: []string{},
 	}
 }
 

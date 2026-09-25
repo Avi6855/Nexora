@@ -20,8 +20,8 @@ import (
 // assignment, staged percentage rollout, cohort constraints, and automatic
 // rollback when the flag's error rate or latency breaches its guardrails.
 type FlagService struct {
-	repo   repository.FlagRepository
-	logger zerolog.Logger
+	repo    repository.FlagRepository
+	logger  zerolog.Logger
 	nowFunc func() time.Time
 }
 

@@ -46,6 +46,19 @@ type LedgerRepository interface {
 	// first caller gets true, duplicates false.
 	MarkPaymentBooked(ctx context.Context, paymentID uuid.UUID, idempotencyKey, eventType string) (bool, error)
 
+	// ReleasePaymentClaim frees a claim whose booking never completed. The
+	// claim is taken before the entries are written, so without this
+	// compensation a crash or a refused booking would leave the payment marked
+	// as booked forever and the money would never move.
+	ReleasePaymentClaim(ctx context.Context, paymentID uuid.UUID) error
+
+	// CreateEntryPair writes the two legs of one money movement — the customer
+	// debit and its counter-credit — as a single logged batch. A settlement
+	// that wrote only one leg would leave the ledger unbalanced, and writing
+	// them one at a time can leave that half-state behind on a crash, so they
+	// travel together (ADR-005's reasoning, applied to the ledger itself).
+	CreateEntryPair(ctx context.Context, debit, credit *domain.LedgerEntry) error
+
 	// GetEntryByID resolves a single ledger entry by its id. Entries are
 	// partitioned by account, so implementations may fall back to a scan at
 	// dev scale (production would keep an entry_id lookup table).
@@ -204,6 +217,46 @@ func (r *cassandraLedgerRepository) CreateEntry(ctx context.Context, entry *doma
 		entry.EventVersion,
 		entry.CreatedAt,
 	).WithContext(ctx).Exec()
+}
+
+// entryInsertArgs flattens an entry into the column order the insert expects,
+// shared by the single-entry and paired writes.
+func entryInsertArgs(entry *domain.LedgerEntry) []interface{} {
+	return []interface{}{
+		toUUID(entry.EntryID),
+		toUUID(entry.AccountID),
+		toUUID(entry.TransactionID),
+		string(entry.EntryType),
+		string(entry.EntryDirection),
+		entry.Amount,
+		entry.Currency,
+		entry.BalanceBefore,
+		entry.BalanceAfter,
+		entry.Description,
+		string(entry.Category),
+		entry.CorrelationID,
+		entry.CausationID,
+		entry.EventVersion,
+		entry.CreatedAt,
+	}
+}
+
+const insertEntryQuery = `INSERT INTO ledger_entries (entry_id, account_id, transaction_id, entry_type, entry_direction, amount, currency, balance_before, balance_after, description, category, correlation_id, causation_id, event_version, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+func (r *cassandraLedgerRepository) CreateEntryPair(ctx context.Context, debit, credit *domain.LedgerEntry) error {
+	if debit == nil || credit == nil {
+		return fmt.Errorf("entry pair needs both legs")
+	}
+
+	batch := r.session.NewBatch(gocql.LoggedBatch).WithContext(ctx)
+	batch.Query(insertEntryQuery, entryInsertArgs(debit)...)
+	batch.Query(insertEntryQuery, entryInsertArgs(credit)...)
+
+	if err := r.session.ExecuteBatch(batch); err != nil {
+		return fmt.Errorf("writing entry pair: %w", err)
+	}
+	return nil
 }
 
 func (r *cassandraLedgerRepository) CreateEntryIfNotExists(ctx context.Context, entry *domain.LedgerEntry) (bool, error) {
@@ -568,7 +621,7 @@ func (r *cassandraLedgerRepository) GetEntryByID(ctx context.Context, entryID uu
 	// Entries are partitioned by account_id; a global entry-id index would be
 	// the production answer. At dev scale a partition scan is correct and
 	// simple: find the entry, then return it via the standard scanner.
-	iter := r.session.Query(`SELECT ` + fullEntryCols + ` FROM ledger_entries WHERE entry_id = ? ALLOW FILTERING`, toUUID(entryID)).WithContext(ctx).Iter()
+	iter := r.session.Query(`SELECT `+fullEntryCols+` FROM ledger_entries WHERE entry_id = ? ALLOW FILTERING`, toUUID(entryID)).WithContext(ctx).Iter()
 	defer iter.Close()
 	entries, err := scanEntries(iter)
 	if err != nil {
@@ -692,4 +745,12 @@ func (r *cassandraLedgerRepository) MarkPaymentBooked(ctx context.Context, payme
 		return false, fmt.Errorf("claiming payment booking: %w", err)
 	}
 	return applied, nil
+}
+
+func (r *cassandraLedgerRepository) ReleasePaymentClaim(ctx context.Context, paymentID uuid.UUID) error {
+	query := `DELETE FROM ledger_payment_marks WHERE payment_id = ?`
+	if err := r.session.Query(query, toUUID(paymentID)).WithContext(ctx).Exec(); err != nil {
+		return fmt.Errorf("releasing payment booking claim: %w", err)
+	}
+	return nil
 }

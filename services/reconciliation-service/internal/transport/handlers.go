@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gorilla/mux"
-	"github.com/rs/zerolog"
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	"github.com/nexora/nexora/services/reconciliation-service/internal/domain"
 	"github.com/nexora/nexora/services/reconciliation-service/internal/service"
+	"github.com/rs/zerolog"
 )
 
 type Handlers struct {
@@ -196,10 +196,10 @@ func (h *Handlers) RunScheduledReconciliation(w http.ResponseWriter, r *http.Req
 
 func (h *Handlers) RecordDiscrepancy(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		TransactionID  string `json:"transaction_id"`
-		InternalState  string `json:"internal_state"`
-		ExternalState  string `json:"external_state"`
-		Resolution     string `json:"resolution"`
+		TransactionID string `json:"transaction_id"`
+		InternalState string `json:"internal_state"`
+		ExternalState string `json:"external_state"`
+		Resolution    string `json:"resolution"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid request body")

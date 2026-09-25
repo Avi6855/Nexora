@@ -5,17 +5,17 @@ import (
 	"math"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/google/uuid"
 	"github.com/nexora/nexora/services/fraud-service/internal/domain"
 	"github.com/nexora/nexora/services/fraud-service/internal/events"
 	"github.com/nexora/nexora/services/fraud-service/internal/repository"
+	"github.com/rs/zerolog"
 )
 
 type FraudService struct {
-	repo   repository.FraudRepository
+	repo     repository.FraudRepository
 	producer *events.KafkaProducer
-	logger zerolog.Logger
+	logger   zerolog.Logger
 }
 
 func NewFraudService(repo repository.FraudRepository, producer *events.KafkaProducer, logger zerolog.Logger) *FraudService {
@@ -217,16 +217,16 @@ func (s *FraudService) AnalyzePayment(ctx context.Context, req *domain.AnalyzePa
 	accountID := uuid.MustParse(req.AccountID)
 
 	analysis := &domain.FraudAnalysis{
-		AnalysisID:  uuid.New(),
-		PaymentID:   paymentID,
-		UserID:      userID,
-		AccountID:   accountID,
-		RiskScore:   totalScore,
-		RiskAction:  action,
-		RiskLevel:   riskLevel,
-		DeviceID:    req.DeviceID,
-		IPAddress:   req.IPAddress,
-		CreatedAt:   time.Now().UTC(),
+		AnalysisID: uuid.New(),
+		PaymentID:  paymentID,
+		UserID:     userID,
+		AccountID:  accountID,
+		RiskScore:  totalScore,
+		RiskAction: action,
+		RiskLevel:  riskLevel,
+		DeviceID:   req.DeviceID,
+		IPAddress:  req.IPAddress,
+		CreatedAt:  time.Now().UTC(),
 	}
 
 	_ = s.repo.CreateAnalysis(ctx, analysis)

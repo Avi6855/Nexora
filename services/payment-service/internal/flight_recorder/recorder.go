@@ -8,17 +8,17 @@ import (
 type Stage string
 
 const (
-	StageRequest       Stage = "REQUEST"
+	StageRequest        Stage = "REQUEST"
 	StageAuthentication Stage = "AUTHENTICATION"
-	StagePolicy        Stage = "POLICY"
-	StageFraud         Stage = "FRAUD"
-	StageLimits        Stage = "LIMITS"
-	StageReservation   Stage = "RESERVATION"
-	StageLedger        Stage = "LEDGER"
-	StageKafka         Stage = "KAFKA"
-	StageProvider      Stage = "PROVIDER"
-	StageSettlement    Stage = "SETTLEMENT"
-	StageNotification  Stage = "NOTIFICATION"
+	StagePolicy         Stage = "POLICY"
+	StageFraud          Stage = "FRAUD"
+	StageLimits         Stage = "LIMITS"
+	StageReservation    Stage = "RESERVATION"
+	StageLedger         Stage = "LEDGER"
+	StageKafka          Stage = "KAFKA"
+	StageProvider       Stage = "PROVIDER"
+	StageSettlement     Stage = "SETTLEMENT"
+	StageNotification   Stage = "NOTIFICATION"
 )
 
 type EventStatus string
@@ -30,24 +30,24 @@ const (
 )
 
 type FlightEvent struct {
-	TraceID     string            `json:"trace_id"`
-	SpanID      string            `json:"span_id"`
-	Service     string            `json:"service"`
-	Stage       Stage             `json:"stage"`
-	Decision    string            `json:"decision"`
-	Status      EventStatus       `json:"status"`
-	LatencyMs   float64           `json:"latency_ms"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	Timestamp   time.Time         `json:"timestamp"`
+	TraceID   string            `json:"trace_id"`
+	SpanID    string            `json:"span_id"`
+	Service   string            `json:"service"`
+	Stage     Stage             `json:"stage"`
+	Decision  string            `json:"decision"`
+	Status    EventStatus       `json:"status"`
+	LatencyMs float64           `json:"latency_ms"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
+	Timestamp time.Time         `json:"timestamp"`
 }
 
 type TransactionTrace struct {
-	TransactionID string        `json:"transaction_id"`
+	TransactionID string         `json:"transaction_id"`
 	Events        []*FlightEvent `json:"events"`
-	TotalLatency  float64       `json:"total_latency_ms"`
-	StartTime     time.Time     `json:"start_time"`
-	EndTime       time.Time     `json:"end_time"`
-	Success       bool          `json:"success"`
+	TotalLatency  float64        `json:"total_latency_ms"`
+	StartTime     time.Time      `json:"start_time"`
+	EndTime       time.Time      `json:"end_time"`
+	Success       bool           `json:"success"`
 }
 
 type FlightRecorder struct {

@@ -283,6 +283,22 @@ func (m *mockRepository) MarkPaymentBooked(ctx context.Context, paymentID uuid.U
 	return true, nil
 }
 
+func (m *mockRepository) ReleasePaymentClaim(ctx context.Context, paymentID uuid.UUID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.bookedPayments, paymentID)
+	return nil
+}
+
+// CreateEntryPair is the atomic two-leg write; the mock applies both legs so a
+// settlement can be asserted as a balanced pair.
+func (m *mockRepository) CreateEntryPair(ctx context.Context, debit, credit *domain.LedgerEntry) error {
+	if err := m.CreateEntry(ctx, debit); err != nil {
+		return err
+	}
+	return m.CreateEntry(ctx, credit)
+}
+
 // ── Ledger invariant monitor mocks ──
 func (m *mockRepository) ListEntryAccounts(ctx context.Context) ([]uuid.UUID, error) {
 	m.mu.Lock()

@@ -10,13 +10,13 @@ import (
 type PolicyType string
 
 const (
-	PolicyTypeSpendingLimit  PolicyType = "SPENDING_LIMIT"
-	PolicyTypeVelocity       PolicyType = "VELOCITY"
-	PolicyTypeGeographic     PolicyType = "GEOGRAPHIC"
-	PolicyTypeDevice         PolicyType = "DEVICE"
-	PolicyTypeTimeBased      PolicyType = "TIME_BASED"
-	PolicyTypeAmountPattern  PolicyType = "AMOUNT_PATTERN"
-	PolicyTypeRecipientRisk  PolicyType = "RECIPIENT_RISK"
+	PolicyTypeSpendingLimit PolicyType = "SPENDING_LIMIT"
+	PolicyTypeVelocity      PolicyType = "VELOCITY"
+	PolicyTypeGeographic    PolicyType = "GEOGRAPHIC"
+	PolicyTypeDevice        PolicyType = "DEVICE"
+	PolicyTypeTimeBased     PolicyType = "TIME_BASED"
+	PolicyTypeAmountPattern PolicyType = "AMOUNT_PATTERN"
+	PolicyTypeRecipientRisk PolicyType = "RECIPIENT_RISK"
 )
 
 type PolicyScope string
@@ -61,13 +61,13 @@ type Policy struct {
 }
 
 type PolicyRule struct {
-	RuleID      string            `json:"rule_id"`
-	Name        string            `json:"name"`
-	Condition   string            `json:"condition"`
-	Action      PolicyDecisionAction `json:"action"`
-	Priority    int               `json:"priority"`
-	Parameters  map[string]string `json:"parameters"`
-	Enabled     bool              `json:"enabled"`
+	RuleID     string               `json:"rule_id"`
+	Name       string               `json:"name"`
+	Condition  string               `json:"condition"`
+	Action     PolicyDecisionAction `json:"action"`
+	Priority   int                  `json:"priority"`
+	Parameters map[string]string    `json:"parameters"`
+	Enabled    bool                 `json:"enabled"`
 }
 
 type PaymentContext struct {
@@ -92,10 +92,10 @@ type PolicyDecision struct {
 }
 
 type MatchedRule struct {
-	RuleID   string `json:"rule_id"`
-	RuleName string `json:"rule_name"`
+	RuleID   string               `json:"rule_id"`
+	RuleName string               `json:"rule_name"`
 	Action   PolicyDecisionAction `json:"action"`
-	Reason   string `json:"reason"`
+	Reason   string               `json:"reason"`
 }
 
 type EvaluatePaymentRequest struct {
@@ -110,10 +110,10 @@ type EvaluatePaymentRequest struct {
 }
 
 type EvaluatePaymentResponse struct {
-	FinalDecision PolicyDecisionAction `json:"final_decision"`
-	PolicyDecisions []PolicyDecision    `json:"policy_decisions"`
-	MatchedRules  []MatchedRule        `json:"matched_rules"`
-	Reasons       []string             `json:"reasons"`
+	FinalDecision   PolicyDecisionAction `json:"final_decision"`
+	PolicyDecisions []PolicyDecision     `json:"policy_decisions"`
+	MatchedRules    []MatchedRule        `json:"matched_rules"`
+	Reasons         []string             `json:"reasons"`
 }
 
 type ShadowCompareRequest struct {
@@ -129,10 +129,10 @@ type ShadowCompareRequest struct {
 }
 
 type ShadowCompareResponse struct {
-	CurrentDecision  PolicyDecision `json:"current_decision"`
-	ShadowDecision   PolicyDecision `json:"shadow_decision"`
-	Match            bool           `json:"match"`
-	Differences      []string       `json:"differences"`
+	CurrentDecision PolicyDecision `json:"current_decision"`
+	ShadowDecision  PolicyDecision `json:"shadow_decision"`
+	Match           bool           `json:"match"`
+	Differences     []string       `json:"differences"`
 }
 
 type CreatePolicyRequest struct {
@@ -154,19 +154,19 @@ type FeatureFlag struct {
 	Description string    `json:"description"`
 	Enabled     bool      `json:"enabled"`
 	// RolloutPct: 0 = off for everyone, 100 = fully on.
-	RolloutPct int       `json:"rollout_pct"`
+	RolloutPct int `json:"rollout_pct"`
 	// CohortConstraint (optional) like "app_version>=2.1" or "country=UK".
 	CohortConstraint string `json:"cohort_constraint,omitempty"`
 	// Auto-rollback guards: measured by the flag's own metrics window.
-	BaselineErrorPct  float64   `json:"baseline_error_pct"`
-	MaxErrorPct       float64   `json:"max_error_pct"`
-	MaxLatencyMs      float64   `json:"max_latency_ms"`
-	ErrorPct          float64   `json:"error_pct"`
-	LatencyMs         float64   `json:"latency_ms"`
-	RolledBack        bool      `json:"rolled_back"`
-	RollbackReason    string    `json:"rollback_reason,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	BaselineErrorPct float64   `json:"baseline_error_pct"`
+	MaxErrorPct      float64   `json:"max_error_pct"`
+	MaxLatencyMs     float64   `json:"max_latency_ms"`
+	ErrorPct         float64   `json:"error_pct"`
+	LatencyMs        float64   `json:"latency_ms"`
+	RolledBack       bool      `json:"rolled_back"`
+	RollbackReason   string    `json:"rollback_reason,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 var (
@@ -195,10 +195,10 @@ type RecordFlagMetricRequest struct {
 
 // EvaluateFlagResponse answers "is this user in the flag's cohort?".
 type EvaluateFlagResponse struct {
-	Key      string `json:"key"`
-	Enabled  bool   `json:"enabled"`
-	RolloutPct int  `json:"rollout_pct"`
-	Reason   string `json:"reason"`
+	Key        string `json:"key"`
+	Enabled    bool   `json:"enabled"`
+	RolloutPct int    `json:"rollout_pct"`
+	Reason     string `json:"reason"`
 }
 
 type ErrorResponse struct {

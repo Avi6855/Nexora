@@ -98,6 +98,8 @@ It prints PASS lines for every assertion. What it actually does, end to end:
 | 11. Balance post-capture | ledger `balance_after` | current = **96500**, reserved 0 |
 | 12. SSE pushes | live pushes for every decision incl. "New balance £965.00" | real rows + real balance |
 | 13. Roundup | captured payment sweeps spare change into the round-up pot (only when the spend isn't already on a pound boundary — authorise £35.20, not £35.00, to see an 80p sweep) | real pot deposit via `pot.deposit` |
+| 14. Step-up (SCA) | an e-commerce £120 presentment goes to CHALLENGED with **no** reservation; the code reaches the app in the feed | `card_sca_challenges` row PENDING, no `reservations` row |
+| 15. Answer + refund | the correct code approves it and only then takes the hold; a partial refund then the remainder leave it REFUNDED, and one more refund is refused | `card_authorizations.refunded_amount`, balanced refund legs in `ledger_entries` |
 
 ### Watching it in Grafana
 
@@ -158,6 +160,73 @@ curl -s -X PUT -H "Content-Type: application/json" -H "X-User-ID: <USER>" \
   -d '{"online_enabled":false}' http://localhost:8087/v1/cards/<CARD_ID>/controls
 # next e-commerce presentment declines with reason online_payments_disabled
 ```
+
+### PSD2 step-up (SCA) and refunds
+
+A card-not-present presentment above the low-value ceiling must be authenticated
+by the cardholder before any money is held. The whole loop runs locally:
+
+```bash
+CARD="<CARD_ID>"   # the virtual card from the demo
+
+# 1. E-commerce presentment (ECOM entry mode) → 202, CHALLENGED, NO hold:
+AUTH=$(curl -s -X POST -H "Content-Type: application/json" -H "X-Internal-Token: $INTERNAL_TOKEN" \
+  -d '{"amount":12000,"currency":"GBP","merchant":"Zara Online","merchant_category":"5651",
+       "merchant_city":"London","merchant_country":"GB","terminal_id":"ECOM"}' \
+  http://localhost:8087/v1/cards/$CARD/authorize)
+echo "$AUTH" | jq '{status, decision, challenge_id, reservation_id}'
+# status CHALLENGED, reservation_id null — the customer's money is untouched
+curl -s "http://localhost:8084/v1/ledger/accounts/<ACCOUNT>/balance" | jq .available_balance
+# unchanged: no reservation was taken
+
+# 2. The app receives the step-up over SSE (GET /v1/stream?user_id=<USER>):
+#    the feed shows "Confirm your payment · £120.00 to Zara Online · your code is 424242"
+# (the code also travels on nexora.card.authorization.challenged)
+
+# 3. Answer it with the code from the feed:
+CH=$(echo "$AUTH" | jq -r .challenge_id)
+curl -s -X POST -H "Content-Type: application/json" -H "X-User-ID: <USER>" \
+  -d "{\"challenge_id\":\"$CH\",\"otp\":\"424242\"}" \
+  http://localhost:8087/v1/cards/$CARD/authorizations/<AUTH_ID>/challenge | jq '{status, reservation_id}'
+# APPROVED + reservation_id set: the hold is taken only now
+# a wrong code: 401 with attempts remaining; three wrong codes: DECLINED sca_failed, no hold
+# the same code replayed: 409, and no second hold
+
+# 4. Capture, then refund (partial), then the rest:
+curl -s -X POST http://localhost:8087/v1/cards/$CARD/authorizations/<AUTH_ID>/capture >/dev/null
+curl -s -X POST -H "Content-Type: application/json" \
+  -d '{"amount":2000,"reason":"damaged item"}' \
+  http://localhost:8087/v1/cards/$CARD/authorizations/<AUTH_ID>/refund | jq '{status, refunded_amount}'
+# PARTIALLY_REFUNDED, 2000; the ledger credited the customer and debited suspense
+curl -s -X POST -H "Content-Type: application/json" \
+  -d '{"amount":10000}' \
+  http://localhost:8087/v1/cards/$CARD/authorizations/<AUTH_ID>/refund | jq '{status, refunded_amount}'
+# REFUNDED, 12000; a further refund is refused (nothing left to refund)
+curl -s -X POST -H "Content-Type: application/json" -d '{"amount":1}' \
+  http://localhost:8087/v1/cards/$CARD/authorizations/<AUTH_ID>/refund -w " %{http_code}\n"
+# 400 — a refund can never exceed what was captured
+```
+
+What to check in Cassandra:
+
+```bash
+# The step-up itself: how the cardholder was challenged, and how it ended.
+$CQL "USE nexora; SELECT status, attempts, max_attempts, failure_reason, expires_at, completed_at FROM card_sca_challenges LIMIT 10;"
+
+# The expiry index the sweep reads (hourly buckets, TTL'd rows). An unanswered
+# step-up is declined at its deadline by the per-minute sweep:
+$CQL "USE nexora; SELECT bucket, expires_at, challenge_id FROM card_sca_challenges_by_expiry LIMIT 10;"
+
+# How the payment was approved: a PSD2 exemption, or a completed challenge.
+$CQL "USE nexora; SELECT merchant, amount, status, sca_exemption, challenge_id, refunded_amount FROM card_authorizations LIMIT 20;"
+
+# The refund legs: customer CREDIT + suspense DEBIT, one transaction each.
+$CQL "USE nexora; SELECT transaction_id, account_id, entry_type, amount, balance_after FROM ledger_entries LIMIT 20;"
+```
+
+**Schema note:** the step-up and refund work adds `card_sca_challenges` and four
+columns on `card_authorizations`. A dev volume created before this change must be
+recreated (see the drop/recreate commands at the top of this file).
 
 ### Payment lifecycle through the outbox (money-in + exactly-once)
 
@@ -307,6 +376,7 @@ domain counters (authorization decisions by outcome/reason).
 |---|---|
 | Outbox | `shared/outbox/*`, `cassandra/init/schema.cql` (`outbox_events`), `services/payment-service/internal/{repository,events,service}/*`, `docs/adr/ADR-005-outbox.md` |
 | Card auth | `services/card-service/internal/{domain/authorization.go, repository/authorization_repository.go, clients, service/authorization_service.go, events}`, `services/fraud-service/internal/{domain/authorization.go, service/authorization_evaluator.go, repository}`, `cassandra/init/schema.cql` (`card_authorizations`) |
+| PSD2 step-up + refunds | `shared/schemes/sca.go`, `services/card-service/internal/{domain/sca.go, repository/sca_repository.go, service/sca_service.go, service/refund_service.go}`, `cassandra/init/schema.cql` (`card_sca_challenges`), `services/ledger-service/internal/service/refund_booking.go`, `docs/adr/ADR-037-psd2-sca-step-up.md` |
 | Ledger truth | `services/ledger-service/internal/{repository,service,events}/*`, `services/account-service/internal/{clients/ledger.go, service/account_service.go}` |
 | Realtime | `services/notification-service/internal/{realtime/hub.go, events/consumer.go, domain/feed.go, service/realtime_consumer.go}`, `/v1/stream` + `/v1/feed` |
 | Financial Intelligence Platform | `services/insights-service/**` (consumer + detectors + projections + API), `cassandra/init/schema.cql` (`subscriptions`, `account_baselines`, `account_income`, `insights_alerts`), notification-service `nexora.insights.alerts` consumer, Android `feature/insights/**` |

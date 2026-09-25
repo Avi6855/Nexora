@@ -39,18 +39,18 @@ const (
 
 // Event is a durable, Kafka-ready representation of a domain event.
 type Event struct {
-	EventID       uuid.UUID `json:"event_id"`
-	AggregateID   string    `json:"aggregate_id"`
-	EventType     string    `json:"event_type"`
-	Topic         string    `json:"topic"`
-	CorrelationID string    `json:"correlation_id"`
-	CausationID   string    `json:"causation_id"`
-	Producer      string    `json:"producer"`
-	Payload       []byte    `json:"payload"`
-	Status        Status    `json:"status"`
-	Attempts      int       `json:"attempts"`
-	LastError     string    `json:"last_error,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
+	EventID       uuid.UUID  `json:"event_id"`
+	AggregateID   string     `json:"aggregate_id"`
+	EventType     string     `json:"event_type"`
+	Topic         string     `json:"topic"`
+	CorrelationID string     `json:"correlation_id"`
+	CausationID   string     `json:"causation_id"`
+	Producer      string     `json:"producer"`
+	Payload       []byte     `json:"payload"`
+	Status        Status     `json:"status"`
+	Attempts      int        `json:"attempts"`
+	LastError     string     `json:"last_error,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
 	PublishedAt   *time.Time `json:"published_at,omitempty"`
 }
 

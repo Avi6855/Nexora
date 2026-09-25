@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/gorilla/mux"
-	"github.com/rs/zerolog"
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	"github.com/nexora/nexora/services/user-service/internal/domain"
 	"github.com/nexora/nexora/services/user-service/internal/service"
+	"github.com/rs/zerolog"
 )
 
 type Handlers struct {

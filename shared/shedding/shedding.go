@@ -45,15 +45,15 @@ func DefaultClassifier(r *http.Request) bool {
 // Middleware polls the control plane for the service's shed decision and
 // sheds non-critical requests by the instructed percentage.
 type Middleware struct {
-	service   string
+	service    string
 	controlURL string
-	classify  Classifier
-	client    *http.Client
+	classify   Classifier
+	client     *http.Client
 
-	mu        sync.RWMutex
-	shedPct   int
-	reason    string
-	counter   uint64
+	mu      sync.RWMutex
+	shedPct int
+	reason  string
+	counter uint64
 
 	stop context.CancelFunc
 }

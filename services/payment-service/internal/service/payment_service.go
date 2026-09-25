@@ -39,6 +39,14 @@ func (s *PaymentService) SetAccountClient(c *clients.AccountClient) {
 	s.accounts = c
 }
 
+// SetFundHolder enables ledger-backed authorisation holds. Called from main
+// when LEDGER_SERVICE_URL is configured; without it the saga authorises
+// payments without holding, which is only safe because the ledger still
+// refuses to book a debit the account cannot cover.
+func (s *PaymentService) SetFundHolder(h FundHolder) {
+	s.saga.SetFundHolder(h)
+}
+
 func NewPaymentService(
 	paymentRepo repository.PaymentRepository,
 	provider provider.PaymentProvider,

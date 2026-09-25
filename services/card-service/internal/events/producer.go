@@ -27,6 +27,12 @@ const (
 	EventTypeAuthDeclined EventType = "card.authorization.declined"
 	EventTypeAuthCaptured EventType = "card.authorization.captured"
 	EventTypeAuthVoided   EventType = "card.authorization.voided"
+	// EventTypeAuthChallenged announces a PSD2 step-up: the cardholder must
+	// answer the one-time code before the presentment can be approved.
+	EventTypeAuthChallenged EventType = "card.authorization.challenged"
+	// EventTypeAuthRefunded announces a (partial) refund credited back to the
+	// customer for a captured presentment.
+	EventTypeAuthRefunded EventType = "card.authorization.refunded"
 )
 
 type CardEventEnvelope struct {
@@ -47,7 +53,7 @@ type EventPublisher interface {
 }
 
 type KafkaEventPublisher struct {
-	producer  sarama.AsyncProducer
+	producer    sarama.AsyncProducer
 	producerID  string
 	topicPrefix string
 	logger      zerolog.Logger

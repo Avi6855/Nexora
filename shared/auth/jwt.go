@@ -28,9 +28,9 @@ type TokenPair struct {
 }
 
 type TokenManager struct {
-	secret        []byte
-	accessTTL     time.Duration
-	refreshTTL    time.Duration
+	secret     []byte
+	accessTTL  time.Duration
+	refreshTTL time.Duration
 }
 
 func NewTokenManager(secret string, accessTTL, refreshTTL time.Duration) *TokenManager {

@@ -34,19 +34,19 @@ type IncidentEvent struct {
 }
 
 type Incident struct {
-	IncidentID       uuid.UUID          `json:"incident_id"`
-	Title            string             `json:"title"`
-	Description      string             `json:"description"`
-	Severity         IncidentSeverity   `json:"severity"`
-	Status           IncidentStatus     `json:"status"`
-	AffectedServices []string           `json:"affected_services"`
-	CreatedBy        uuid.UUID          `json:"created_by"`
-	AssignedTo       *uuid.UUID         `json:"assigned_to,omitempty"`
-	Resolution       string             `json:"resolution,omitempty"`
-	Events           []IncidentEvent    `json:"events,omitempty"`
-	CreatedAt        time.Time          `json:"created_at"`
-	UpdatedAt        time.Time          `json:"updated_at"`
-	ResolvedAt       *time.Time         `json:"resolved_at,omitempty"`
+	IncidentID       uuid.UUID        `json:"incident_id"`
+	Title            string           `json:"title"`
+	Description      string           `json:"description"`
+	Severity         IncidentSeverity `json:"severity"`
+	Status           IncidentStatus   `json:"status"`
+	AffectedServices []string         `json:"affected_services"`
+	CreatedBy        uuid.UUID        `json:"created_by"`
+	AssignedTo       *uuid.UUID       `json:"assigned_to,omitempty"`
+	Resolution       string           `json:"resolution,omitempty"`
+	Events           []IncidentEvent  `json:"events,omitempty"`
+	CreatedAt        time.Time        `json:"created_at"`
+	UpdatedAt        time.Time        `json:"updated_at"`
+	ResolvedAt       *time.Time       `json:"resolved_at,omitempty"`
 }
 
 type IncidentTimeline struct {
@@ -57,11 +57,11 @@ type IncidentTimeline struct {
 }
 
 type IncidentThreshold struct {
-	ServiceName    string `json:"service_name"`
-	ErrorRate      float64 `json:"error_rate"`
-	LatencyP99     float64 `json:"latency_p99"`
-	OpenIncidents  int    `json:"open_incidents"`
-	ShouldAlert    bool   `json:"should_alert"`
+	ServiceName   string  `json:"service_name"`
+	ErrorRate     float64 `json:"error_rate"`
+	LatencyP99    float64 `json:"latency_p99"`
+	OpenIncidents int     `json:"open_incidents"`
+	ShouldAlert   bool    `json:"should_alert"`
 }
 
 type CreateIncidentRequest struct {

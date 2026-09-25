@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/google/uuid"
-	"github.com/nexora/nexora/shared/money"
 	"github.com/nexora/nexora/services/account-service/internal/clients"
 	"github.com/nexora/nexora/services/account-service/internal/domain"
 	"github.com/nexora/nexora/services/account-service/internal/events"
 	"github.com/nexora/nexora/services/account-service/internal/repository"
+	"github.com/nexora/nexora/shared/money"
+	"github.com/rs/zerolog"
 )
 
 type AccountService struct {

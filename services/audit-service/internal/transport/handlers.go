@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gorilla/mux"
-	"github.com/rs/zerolog"
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	"github.com/nexora/nexora/services/audit-service/internal/domain"
 	"github.com/nexora/nexora/services/audit-service/internal/service"
+	"github.com/rs/zerolog"
 )
 
 type Handlers struct {

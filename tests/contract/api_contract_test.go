@@ -41,14 +41,14 @@ type TransactionResponse struct {
 }
 
 type PaymentResponse struct {
-	PaymentID       string `json:"payment_id"`
-	AccountID       string `json:"account_id"`
-	State           string `json:"state"`
-	Amount          int64  `json:"amount"`
-	Currency        string `json:"currency"`
-	CounterpartyID  string `json:"counterparty_id"`
-	Reference       string `json:"reference"`
-	CreatedAt       string `json:"created_at"`
+	PaymentID      string `json:"payment_id"`
+	AccountID      string `json:"account_id"`
+	State          string `json:"state"`
+	Amount         int64  `json:"amount"`
+	Currency       string `json:"currency"`
+	CounterpartyID string `json:"counterparty_id"`
+	Reference      string `json:"reference"`
+	CreatedAt      string `json:"created_at"`
 }
 
 type ErrorResponse struct {

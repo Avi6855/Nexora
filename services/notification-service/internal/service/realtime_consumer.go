@@ -29,9 +29,19 @@ type CardAuthorizationEvent struct {
 	RiskScore       float64 `json:"risk_score"`
 	RiskReasons     string  `json:"risk_reasons"`
 	ReservationID   string  `json:"reservation_id"`
-	BalanceAfter    *int64  `json:"balance_after"`
-	LatencyMs       int64   `json:"latency_ms"`
-	CreatedAt       string  `json:"created_at"`
+	// PSD2 step-up fields (card.authorization.challenged). The one-time code is
+	// delivered to the cardholder's app and shown in the feed; the merchant
+	// response never carries it.
+	ChallengeID     string `json:"challenge_id"`
+	ChallengeExpiry string `json:"challenge_expires_at"`
+	ChallengeOTP    string `json:"challenge_otp"`
+	SCAExemption    string `json:"sca_exemption"`
+	// Refund fields (card.authorization.refunded).
+	RefundedAmount int64  `json:"refunded_amount"`
+	RefundID       string `json:"refund_id"`
+	BalanceAfter   *int64 `json:"balance_after"`
+	LatencyMs      int64  `json:"latency_ms"`
+	CreatedAt      string `json:"created_at"`
 }
 
 // PaymentLifecycleEvent mirrors the payment-service payload for
@@ -51,7 +61,8 @@ type PaymentLifecycleEvent struct {
 func (s *NotificationService) HandleRealtimeEvent(ctx context.Context, topic, eventType string, value []byte) error {
 	switch {
 	case eventType == "card.authorization.approved" || eventType == "card.authorization.declined" ||
-		eventType == "card.authorization.captured" || eventType == "card.authorization.voided":
+		eventType == "card.authorization.captured" || eventType == "card.authorization.voided" ||
+		eventType == "card.authorization.challenged" || eventType == "card.authorization.refunded":
 		return s.handleCardEvent(ctx, eventType, value)
 	case eventType == "payment.confirmed" || eventType == "payment.settled":
 		return s.handleMoneyInEvent(ctx, eventType, value)
@@ -167,8 +178,33 @@ func (s *NotificationService) handleCardEvent(ctx context.Context, eventType str
 	case "card.authorization.voided":
 		title = "Payment voided"
 		body = fmt.Sprintf("%s returned to your account at %s", amountStr, ev.Merchant)
+	case "card.authorization.challenged":
+		// PSD2 step-up: the cardholder must confirm the payment with the
+		// one-time code before any money is held.
+		title = "Confirm your payment"
+		body = fmt.Sprintf("%s to %s · your code is %s", amountStr, merchant, ev.ChallengeOTP)
+		nType = domain.NotificationTypeSecurity
+		meta["challenge_id"] = ev.ChallengeID
+		meta["challenge_expires_at"] = ev.ChallengeExpiry
+	case "card.authorization.refunded":
+		settled := ev.Amount <= ev.RefundedAmount
+		title = "Refund received"
+		if !settled {
+			title = "Partial refund received"
+		}
+		body = fmt.Sprintf("%s refunded by %s", pounds(ev.RefundedAmount, ev.Currency), merchant)
+		if ev.BalanceAfter != nil {
+			body = fmt.Sprintf("%s · New balance %s", body, pounds(*ev.BalanceAfter, ev.Currency))
+		}
+		meta["refund_id"] = ev.RefundID
+		meta["refunded_amount"] = ev.RefundedAmount
 	case "card.authorization.declined":
 		switch ev.DeclineReason {
+		case "sca_failed", "sca_challenge_expired":
+			title = "Payment not confirmed"
+			body = fmt.Sprintf("We declined %s at %s because the payment was not confirmed", amountStr, merchant)
+			nType = domain.NotificationTypeSecurity
+			meta["decline_reason"] = ev.DeclineReason
 		case "insufficient_funds":
 			title = "Card payment declined"
 			body = fmt.Sprintf("Couldn't authorise %s at %s — not enough money in this account", amountStr, merchant)
@@ -216,11 +252,11 @@ func (s *NotificationService) handleMoneyInEvent(ctx context.Context, eventType 
 	}
 
 	meta, _ := json.Marshal(map[string]interface{}{
-		"payment_id":  ev.PaymentID,
-		"account_id":  ev.AccountID,
-		"amount":      ev.Amount,
-		"currency":    ev.Currency,
-		"merchant":    strings.TrimSpace(ev.Reference),
+		"payment_id": ev.PaymentID,
+		"account_id": ev.AccountID,
+		"amount":     ev.Amount,
+		"currency":   ev.Currency,
+		"merchant":   strings.TrimSpace(ev.Reference),
 	})
 	title := "Money in"
 	body := fmt.Sprintf("%s credited to your account", pounds(ev.Amount, ev.Currency))

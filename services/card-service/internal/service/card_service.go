@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/google/uuid"
 	"github.com/nexora/nexora/services/card-service/internal/domain"
 	"github.com/nexora/nexora/services/card-service/internal/events"
 	"github.com/nexora/nexora/services/card-service/internal/repository"
+	"github.com/rs/zerolog"
 )
 
 type CardService struct {
-	cardRepo   repository.CardRepository
-	publisher  events.EventPublisher
-	logger     zerolog.Logger
+	cardRepo  repository.CardRepository
+	publisher events.EventPublisher
+	logger    zerolog.Logger
 }
 
 func NewCardService(cardRepo repository.CardRepository, publisher events.EventPublisher, logger zerolog.Logger) *CardService {

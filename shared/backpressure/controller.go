@@ -8,23 +8,23 @@ import (
 type WorkloadClass string
 
 const (
-	WorkloadCritical    WorkloadClass = "CRITICAL"
-	WorkloadImportant   WorkloadClass = "IMPORTANT"
-	WorkloadDeferable   WorkloadClass = "DEFERABLE"
+	WorkloadCritical  WorkloadClass = "CRITICAL"
+	WorkloadImportant WorkloadClass = "IMPORTANT"
+	WorkloadDeferable WorkloadClass = "DEFERABLE"
 )
 
 type Request struct {
-	ID        string       `json:"id"`
+	ID        string        `json:"id"`
 	Class     WorkloadClass `json:"class"`
-	Service   string       `json:"service"`
-	Priority  int          `json:"priority"`
-	Timestamp time.Time    `json:"timestamp"`
+	Service   string        `json:"service"`
+	Priority  int           `json:"priority"`
+	Timestamp time.Time     `json:"timestamp"`
 }
 
 type QueueEntry struct {
-	Request   *Request     `json:"request"`
-	EnqueuedAt time.Time   `json:"enqueued_at"`
-	ExpiresAt *time.Time   `json:"expires_at,omitempty"`
+	Request    *Request   `json:"request"`
+	EnqueuedAt time.Time  `json:"enqueued_at"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
 }
 
 type RateLimitConfig struct {
@@ -34,11 +34,11 @@ type RateLimitConfig struct {
 }
 
 type BackpressureController struct {
-	queue       []*QueueEntry
-	mu          sync.RWMutex
-	config      *RateLimitConfig
-	counters    map[WorkloadClass]*RateCounter
-	overloaded  bool
+	queue        []*QueueEntry
+	mu           sync.RWMutex
+	config       *RateLimitConfig
+	counters     map[WorkloadClass]*RateCounter
+	overloaded   bool
 	maxQueueSize int
 }
 
@@ -81,13 +81,13 @@ func (c *BackpressureController) ClassifyWorkload(service, operation string) Wor
 	}
 
 	importantOperations := map[string]bool{
-		"payment.get":           true,
-		"payment.list":          true,
-		"account.get":           true,
-		"account.balance":       true,
-		"user.get":              true,
-		"notification.send":     true,
-		"policy.evaluate":       true,
+		"payment.get":       true,
+		"payment.list":      true,
+		"account.get":       true,
+		"account.balance":   true,
+		"user.get":          true,
+		"notification.send": true,
+		"policy.evaluate":   true,
 	}
 
 	key := service + "." + operation

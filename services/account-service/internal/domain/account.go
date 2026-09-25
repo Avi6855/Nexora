@@ -22,10 +22,10 @@ const (
 type AccountStatus string
 
 const (
-	AccountStatusActive   AccountStatus = "ACTIVE"
-	AccountStatusFrozen   AccountStatus = "FROZEN"
-	AccountStatusClosed   AccountStatus = "CLOSED"
-	AccountStatusPending  AccountStatus = "PENDING"
+	AccountStatusActive  AccountStatus = "ACTIVE"
+	AccountStatusFrozen  AccountStatus = "FROZEN"
+	AccountStatusClosed  AccountStatus = "CLOSED"
+	AccountStatusPending AccountStatus = "PENDING"
 )
 
 type Account struct {
@@ -41,9 +41,9 @@ type Account struct {
 	// lockdown): when set, outbound card payments, bank transfers and cash
 	// withdrawals are refused at the enforcement points. Money IN, Direct
 	// Debits and internal savings sweeps still work.
-	LockdownEnabled bool       `json:"lockdown_enabled"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	LockdownEnabled bool      `json:"lockdown_enabled"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 func NewAccount(userID uuid.UUID, accountType AccountType, currency string) (*Account, error) {

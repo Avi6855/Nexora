@@ -8,7 +8,7 @@ FROM alpine:3.19
 RUN apk --no-cache add ca-certificates tzdata wget
 RUN addgroup -S nexora && adduser -S nexora -G nexora
 COPY --from=builder /app/server /server
-EXPOSE 8097
-HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=20s CMD wget --spider -q http://localhost:8197/health || exit 1
+EXPOSE 8100
+HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=20s CMD wget --spider -q http://localhost:8200/health || exit 1
 USER nexora
 CMD ["/server"]

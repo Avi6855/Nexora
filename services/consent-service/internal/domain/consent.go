@@ -14,8 +14,8 @@ import (
 type Scope string
 
 const (
-	ScopeViewBalance     Scope = "VIEW_BALANCE"
-	ScopeViewTransactions Scope = "VIEW_TRANSACTIONS"
+	ScopeViewBalance        Scope = "VIEW_BALANCE"
+	ScopeViewTransactions   Scope = "VIEW_TRANSACTIONS"
 	ScopeDownloadStatements Scope = "DOWNLOAD_STATEMENTS"
 )
 
@@ -43,17 +43,17 @@ const (
 // DelegationGrant lets another person act on the owner's account for a
 // limited time with explicit capabilities ("give Avi view access for 7 days").
 type DelegationGrant struct {
-	GrantID       uuid.UUID  `json:"grant_id"`
-	OwnerUserID   uuid.UUID  `json:"owner_user_id"`
-	DelegateEmail string     `json:"delegate_email"`
-	DelegateUserID uuid.UUID `json:"delegate_user_id,omitempty"`
-	Label         string     `json:"label"` // who it's for: "Accountant", "Partner"...
-	Scopes        []Scope    `json:"scopes"`
-	Status        GrantStatus `json:"status"`
-	StartsAt      time.Time  `json:"starts_at"`
-	ExpiresAt     time.Time  `json:"expires_at"`
-	CreatedAt     time.Time  `json:"created_at"`
-	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
+	GrantID        uuid.UUID   `json:"grant_id"`
+	OwnerUserID    uuid.UUID   `json:"owner_user_id"`
+	DelegateEmail  string      `json:"delegate_email"`
+	DelegateUserID uuid.UUID   `json:"delegate_user_id,omitempty"`
+	Label          string      `json:"label"` // who it's for: "Accountant", "Partner"...
+	Scopes         []Scope     `json:"scopes"`
+	Status         GrantStatus `json:"status"`
+	StartsAt       time.Time   `json:"starts_at"`
+	ExpiresAt      time.Time   `json:"expires_at"`
+	CreatedAt      time.Time   `json:"created_at"`
+	RevokedAt      *time.Time  `json:"revoked_at,omitempty"`
 }
 
 // AuditRecord captures one exercised (or refused) scoped access.

@@ -6,8 +6,8 @@ import (
 )
 
 type LedgerBalanceResult struct {
-	Balanced    bool  `json:"balanced"`
-	TotalDebits int64 `json:"total_debits"`
+	Balanced     bool  `json:"balanced"`
+	TotalDebits  int64 `json:"total_debits"`
 	TotalCredits int64 `json:"total_credits"`
 }
 
@@ -17,8 +17,8 @@ type DuplicateCheckResult struct {
 }
 
 type DoubleSpendResult struct {
-	HasDoubleSpend    bool  `json:"has_double_spend"`
-	DoubleSpendCount  int64 `json:"double_spend_count"`
+	HasDoubleSpend   bool  `json:"has_double_spend"`
+	DoubleSpendCount int64 `json:"double_spend_count"`
 }
 
 type ReservationConsistencyResult struct {
@@ -34,11 +34,11 @@ type FinancialInvariantChecker interface {
 }
 
 type LedgerEntry struct {
-	AccountID    string `json:"account_id"`
+	AccountID     string `json:"account_id"`
 	TransactionID string `json:"transaction_id"`
-	EntryType    string `json:"entry_type"`
-	Amount       int64  `json:"amount"`
-	Currency     string `json:"currency"`
+	EntryType     string `json:"entry_type"`
+	Amount        int64  `json:"amount"`
+	Currency      string `json:"currency"`
 }
 
 type LedgerTransaction struct {
@@ -198,9 +198,9 @@ func (c *DefaultFinancialInvariantChecker) CheckReservationConsistency(ctx conte
 }
 
 type InMemoryLedgerProvider struct {
-	entries       []*LedgerEntry
-	transactions  []*LedgerTransaction
-	reservations  []*Reservation
+	entries      []*LedgerEntry
+	transactions []*LedgerTransaction
+	reservations []*Reservation
 }
 
 func NewInMemoryLedgerProvider() *InMemoryLedgerProvider {

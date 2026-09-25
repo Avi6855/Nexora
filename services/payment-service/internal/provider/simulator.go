@@ -33,14 +33,14 @@ type PaymentProvider interface {
 type Behavior string
 
 const (
-	BehaviorAlwaysSucceed    Behavior = "always_succeed"
-	BehaviorAlwaysFail       Behavior = "always_fail"
-	BehaviorTimeout          Behavior = "timeout"
-	BehaviorUnknown          Behavior = "unknown"
-	BehaviorDelayedSuccess   Behavior = "delayed_success"
-	BehaviorError503         Behavior = "error_503"
-	BehaviorNetworkError     Behavior = "network_error"
-	BehaviorRandomFail       Behavior = "random_fail"
+	BehaviorAlwaysSucceed  Behavior = "always_succeed"
+	BehaviorAlwaysFail     Behavior = "always_fail"
+	BehaviorTimeout        Behavior = "timeout"
+	BehaviorUnknown        Behavior = "unknown"
+	BehaviorDelayedSuccess Behavior = "delayed_success"
+	BehaviorError503       Behavior = "error_503"
+	BehaviorNetworkError   Behavior = "network_error"
+	BehaviorRandomFail     Behavior = "random_fail"
 )
 
 type MockProvider struct {

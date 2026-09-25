@@ -77,8 +77,43 @@ echo "$BAL"
 echo "$BAL" | grep -q '"current_balance":{"amount":96500' && echo "PASS: money booked, balance 96500" || echo "FAIL: booked balance"
 echo "$BAL" | grep -q '"reserved_balance":{"amount":0' && echo "PASS: reservation cleared" || echo "WARN: reserved"
 
+echo "=== 12. PSD2 STEP-UP: E-COMMERCE GBP 120 IS CHALLENGED, NOT HELD ==="
+CHAL=$(J -X POST -d '{"amount":12000,"currency":"GBP","merchant":"Zara Online","merchant_category":"5651","merchant_city":"LONDON","merchant_country":"GB","terminal_id":"ECOM","device_id":"DEV-ANDROID-99"}' http://localhost:8087/v1/cards/$CID/authorize)
+echo "$CHAL" | head -c 600; echo
+CHALID=$(echo "$CHAL" | grep -o '"challenge_id":"[^"]*"' | head -1 | cut -d'"' -f4)
+CHALAUTH=$(echo "$CHAL" | grep -o '"authorization_id":"[^"]*"' | head -1 | cut -d'"' -f4)
+echo "$CHAL" | grep -q '"status":"CHALLENGED"' && echo "PASS: step-up required" || echo "FAIL: no step-up"
+echo "$CHAL" | grep -q '"reservation_id"' && echo "FAIL: funds held before authentication" || echo "PASS: no hold while the customer authenticates"
+[ -z "$CHALID" ] && exit 1
+
+echo "=== 12b. THE CODE REACHES THE APP (FEED / SSE) ==="
 sleep 2
-echo "=== 12. SSE PUSHES RECEIVED ==="
+FEED=$(curl -s "http://localhost:8090/v1/feed?user_id=$USER")
+OTP=$(echo "$FEED" | grep -o 'your code is [0-9][0-9]*' | tail -1 | awk '{print $NF}')
+echo "otp=$OTP"
+
+if [ -n "$OTP" ]; then
+  echo "=== 12c. ANSWER THE STEP-UP ==="
+  RES=$(J -X POST -d "{\"challenge_id\":\"$CHALID\",\"otp\":\"$OTP\"}" http://localhost:8087/v1/cards/$CID/authorizations/$CHALAUTH/challenge)
+  echo "$RES" | head -c 400; echo
+  echo "$RES" | grep -q '"status":"APPROVED"' && echo "PASS: step-up approved" || echo "FAIL: step-up not approved"
+  echo "$RES" | grep -q '"reservation_id"' && echo "PASS: hold taken only after authentication" || echo "FAIL: no hold after authentication"
+
+  echo "=== 13. CAPTURE THEN REFUND PARTIAL AND FULL ==="
+  J -X POST http://localhost:8087/v1/cards/$CID/authorizations/$CHALAUTH/capture > /dev/null
+  REF1=$(J -X POST -d '{"amount":2000,"reason":"damaged item"}' http://localhost:8087/v1/cards/$CID/authorizations/$CHALAUTH/refund)
+  echo "$REF1" | head -c 300; echo
+  echo "$REF1" | grep -q '"status":"PARTIALLY_REFUNDED"' && echo "PASS: partial refund credited" || echo "FAIL: partial refund"
+  REF2=$(J -X POST -d '{"amount":10000}' http://localhost:8087/v1/cards/$CID/authorizations/$CHALAUTH/refund)
+  echo "$REF2" | grep -q '"status":"REFUNDED"' && echo "PASS: full refund credited" || echo "FAIL: full refund"
+  REF3=$(J -X POST -d '{"amount":1}' http://localhost:8087/v1/cards/$CID/authorizations/$CHALAUTH/refund)
+  echo "$REF3" | grep -qi 'exceeds the captured amount' && echo "PASS: over-refund refused" || echo "WARN: over-refund not refused"
+else
+  echo "WARN: step-up code not in the feed yet; skipping the challenge/refund steps"
+fi
+
+sleep 2
+echo "=== 14. SSE PUSHES RECEIVED ==="
 cat /tmp/sse_$TS.out
 kill $SSEPID 2>/dev/null || true
 echo "=== E2E DONE ==="

@@ -10,17 +10,17 @@ import (
 )
 
 var (
-	ErrConflict         = errors.New("idempotency key already used with different request")
-	ErrKeyRequired      = errors.New("idempotency key is required")
-	ErrRecordNotFound   = errors.New("idempotency record not found")
+	ErrConflict       = errors.New("idempotency key already used with different request")
+	ErrKeyRequired    = errors.New("idempotency key is required")
+	ErrRecordNotFound = errors.New("idempotency record not found")
 )
 
 type Status string
 
 const (
-	StatusPending    Status = "PENDING"
-	StatusCompleted  Status = "COMPLETED"
-	StatusFailed     Status = "FAILED"
+	StatusPending   Status = "PENDING"
+	StatusCompleted Status = "COMPLETED"
+	StatusFailed    Status = "FAILED"
 )
 
 type IdempotencyRecord struct {

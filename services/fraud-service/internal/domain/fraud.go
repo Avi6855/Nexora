@@ -44,10 +44,10 @@ type FraudSignal struct {
 }
 
 type FraudEvent struct {
-	EventID     uuid.UUID `json:"event_id"`
-	PaymentID   uuid.UUID `json:"payment_id"`
-	UserID      uuid.UUID `json:"user_id"`
-	RiskScore   float64   `json:"risk_score"`
+	EventID     uuid.UUID  `json:"event_id"`
+	PaymentID   uuid.UUID  `json:"payment_id"`
+	UserID      uuid.UUID  `json:"user_id"`
+	RiskScore   float64    `json:"risk_score"`
 	RiskAction  RiskAction `json:"risk_action"`
 	RiskLevel   RiskLevel  `json:"risk_level"`
 	RiskReasons []string   `json:"risk_reasons"`
@@ -80,57 +80,57 @@ type DeviceInfo struct {
 }
 
 type PaymentHistory struct {
-	TotalPayments    int     `json:"total_payments"`
-	AverageAmount    int64   `json:"average_amount"`
-	MaxAmount        int64   `json:"max_amount"`
-	UniqueRecipients int     `json:"unique_recipients"`
-	RecentPayments   int     `json:"recent_payments_24h"`
-	FailedPayments   int     `json:"failed_payments_30d"`
-	AvgDailySpend    int64   `json:"avg_daily_spend"`
+	TotalPayments    int   `json:"total_payments"`
+	AverageAmount    int64 `json:"average_amount"`
+	MaxAmount        int64 `json:"max_amount"`
+	UniqueRecipients int   `json:"unique_recipients"`
+	RecentPayments   int   `json:"recent_payments_24h"`
+	FailedPayments   int   `json:"failed_payments_30d"`
+	AvgDailySpend    int64 `json:"avg_daily_spend"`
 }
 
 type AnalyzePaymentRequest struct {
-	PaymentID  string `json:"payment_id"`
-	UserID     string `json:"user_id"`
-	AccountID  string `json:"account_id"`
-	Amount     int64  `json:"amount"`
-	Currency   string `json:"currency"`
-	DeviceID   string `json:"device_id"`
-	IPAddress  string `json:"ip_address"`
+	PaymentID   string `json:"payment_id"`
+	UserID      string `json:"user_id"`
+	AccountID   string `json:"account_id"`
+	Amount      int64  `json:"amount"`
+	Currency    string `json:"currency"`
+	DeviceID    string `json:"device_id"`
+	IPAddress   string `json:"ip_address"`
 	RecipientID string `json:"recipient_id"`
 }
 
 type AnalyzePaymentFullRequest struct {
-	PaymentID   string         `json:"payment_id"`
-	UserID      string         `json:"user_id"`
-	AccountID   string         `json:"account_id"`
-	Amount      int64          `json:"amount"`
-	Currency    string         `json:"currency"`
-	DeviceID    string         `json:"device_id"`
-	IPAddress   string         `json:"ip_address"`
-	RecipientID string         `json:"recipient_id"`
-	AccountState  *AccountState  `json:"account_state,omitempty"`
-	DeviceInfo    *DeviceInfo     `json:"device_info,omitempty"`
+	PaymentID      string          `json:"payment_id"`
+	UserID         string          `json:"user_id"`
+	AccountID      string          `json:"account_id"`
+	Amount         int64           `json:"amount"`
+	Currency       string          `json:"currency"`
+	DeviceID       string          `json:"device_id"`
+	IPAddress      string          `json:"ip_address"`
+	RecipientID    string          `json:"recipient_id"`
+	AccountState   *AccountState   `json:"account_state,omitempty"`
+	DeviceInfo     *DeviceInfo     `json:"device_info,omitempty"`
 	PaymentHistory *PaymentHistory `json:"payment_history,omitempty"`
 }
 
 type AnalyzePaymentFullResponse struct {
-	Action     RiskAction  `json:"action"`
-	RiskScore  float64     `json:"risk_score"`
-	RiskLevel  RiskLevel   `json:"risk_level"`
+	Action     RiskAction    `json:"action"`
+	RiskScore  float64       `json:"risk_score"`
+	RiskLevel  RiskLevel     `json:"risk_level"`
 	Signals    []FraudSignal `json:"signals"`
-	Reasons    []string    `json:"reasons"`
-	PaymentID  string      `json:"payment_id"`
-	AnalyzedAt time.Time   `json:"analyzed_at"`
+	Reasons    []string      `json:"reasons"`
+	PaymentID  string        `json:"payment_id"`
+	AnalyzedAt time.Time     `json:"analyzed_at"`
 }
 
 type AnalyzeRequest struct {
-	PaymentID  string  `json:"payment_id"`
-	UserID     string  `json:"user_id"`
-	Amount     int64   `json:"amount"`
-	Currency   string  `json:"currency"`
-	DeviceID   string  `json:"device_id"`
-	IPAddress  string  `json:"ip_address"`
+	PaymentID string `json:"payment_id"`
+	UserID    string `json:"user_id"`
+	Amount    int64  `json:"amount"`
+	Currency  string `json:"currency"`
+	DeviceID  string `json:"device_id"`
+	IPAddress string `json:"ip_address"`
 }
 
 type AnalyzeResponse struct {
@@ -167,12 +167,12 @@ type TransferRiskRequest struct {
 // WARN surfaces an in-app warning the user must confirm, STEP_UP demands
 // extra verification, BLOCK refuses the payment.
 type TransferRiskResponse struct {
-	RequestID  string        `json:"request_id"`
-	Action     RiskAction    `json:"action"`
-	RiskScore  float64       `json:"risk_score"`
-	RiskLevel  RiskLevel     `json:"risk_level"`
-	Reasons    []string      `json:"reasons"`
-	Signals    []FraudSignal `json:"signals"`
-	Advice     string        `json:"advice,omitempty"`
-	EvaluatedAt time.Time    `json:"evaluated_at"`
+	RequestID   string        `json:"request_id"`
+	Action      RiskAction    `json:"action"`
+	RiskScore   float64       `json:"risk_score"`
+	RiskLevel   RiskLevel     `json:"risk_level"`
+	Reasons     []string      `json:"reasons"`
+	Signals     []FraudSignal `json:"signals"`
+	Advice      string        `json:"advice,omitempty"`
+	EvaluatedAt time.Time     `json:"evaluated_at"`
 }

@@ -60,21 +60,21 @@ func CanTransition(from, to LifecycleStage) bool {
 type DisputeReason string
 
 const (
-	ReasonFraud          DisputeReason = "FRAUD"           // didn't authorise it
-	ReasonNotReceived    DisputeReason = "NOT_RECEIVED"    // paid, goods never arrived
-	ReasonNotAsDescribed DisputeReason = "NOT_AS_DESCRIBED"
-	ReasonDuplicate      DisputeReason = "DUPLICATE"
+	ReasonFraud           DisputeReason = "FRAUD"        // didn't authorise it
+	ReasonNotReceived     DisputeReason = "NOT_RECEIVED" // paid, goods never arrived
+	ReasonNotAsDescribed  DisputeReason = "NOT_AS_DESCRIBED"
+	ReasonDuplicate       DisputeReason = "DUPLICATE"
 	ReasonIncorrectAmount DisputeReason = "INCORRECT_AMOUNT"
-	ReasonCancelled      DisputeReason = "CANCELLED_RECURRING" // subscription kept charging
+	ReasonCancelled       DisputeReason = "CANCELLED_RECURRING" // subscription kept charging
 )
 
 // disputeCategoryRules is the eligibility engine core: which reasons are
 // scheme-disputable per transaction category, and the evidence deadline.
 type categoryRule struct {
-	eligible           bool
-	evidenceDeadline   time.Duration // how long the user has to send evidence
-	merchantDeadline   time.Duration // how long the merchant has to respond
-	provisionalCredit  bool          // card-scheme rules allow temp credit
+	eligible          bool
+	evidenceDeadline  time.Duration // how long the user has to send evidence
+	merchantDeadline  time.Duration // how long the merchant has to respond
+	provisionalCredit bool          // card-scheme rules allow temp credit
 }
 
 var disputeCategoryRules = map[string]categoryRule{
@@ -83,16 +83,16 @@ var disputeCategoryRules = map[string]categoryRule{
 	"BANK_TRANSFER":   {false, 0, 0, false}, // APP scams go via scam intelligence, not chargebacks
 	"POT_TRANSFER":    {false, 0, 0, false},
 	"DIRECT_DEBIT":    {true, 7 * 24 * time.Hour, 30 * 24 * time.Hour, false}, // DD guarantee
-	"CASH_WITHDRAWAL": {false, 0, 0, false}, // ATM disputes need police report, out of scope
+	"CASH_WITHDRAWAL": {false, 0, 0, false},                                   // ATM disputes need police report, out of scope
 }
 
 // Eligibility is the outcome of the eligibility engine.
 type Eligibility struct {
-	Eligible            bool           `json:"eligible"`
-	Reason              string         `json:"reason,omitempty"`
-	EvidenceDeadline    time.Time      `json:"evidence_deadline"`
-	MerchantDeadline    time.Time      `json:"merchant_deadline"`
-	ProvisionalCredit   bool           `json:"provisional_credit"`
+	Eligible          bool      `json:"eligible"`
+	Reason            string    `json:"reason,omitempty"`
+	EvidenceDeadline  time.Time `json:"evidence_deadline"`
+	MerchantDeadline  time.Time `json:"merchant_deadline"`
+	ProvisionalCredit bool      `json:"provisional_credit"`
 }
 
 // AssessEligibility applies scheme-style rules: category must be disputable,
@@ -127,10 +127,10 @@ func AssessEligibility(category string, txnAmount int64, txnAt, now time.Time) E
 type Resolution string
 
 const (
-	ResolutionRefunded        Resolution = "REFUNDED"          // customer won, money returned
-	ResolutionRejected        Resolution = "REJECTED"          // merchant/scheme ruled against
-	ResolutionMerchantRefund  Resolution = "MERCHANT_REFUND"   // merchant settled directly
-	ResolutionWithdrawn       Resolution = "WITHDRAWN"         // user dropped it
+	ResolutionRefunded       Resolution = "REFUNDED"        // customer won, money returned
+	ResolutionRejected       Resolution = "REJECTED"        // merchant/scheme ruled against
+	ResolutionMerchantRefund Resolution = "MERCHANT_REFUND" // merchant settled directly
+	ResolutionWithdrawn      Resolution = "WITHDRAWN"       // user dropped it
 )
 
 // ── Aggregates ──────────────────────────────────────────────────────────────
@@ -203,9 +203,9 @@ func (c *DisputeCase) TransitionTo(next LifecycleStage, now time.Time) error {
 
 // CreateDisputeRequest is the app's "report a problem" payload.
 type CreateDisputeRequest struct {
-	EntryID       string `json:"entry_id"`
-	Reason        string `json:"reason"`
-	Description   string `json:"description,omitempty"`
+	EntryID     string `json:"entry_id"`
+	Reason      string `json:"reason"`
+	Description string `json:"description,omitempty"`
 }
 
 // CreateDisputeResponse returns the created case (post-eligibility).

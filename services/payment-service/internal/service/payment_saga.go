@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
+	"github.com/nexora/nexora/services/payment-service/internal/clients"
 	"github.com/nexora/nexora/services/payment-service/internal/domain"
 	"github.com/nexora/nexora/services/payment-service/internal/events"
 	"github.com/nexora/nexora/services/payment-service/internal/provider"
@@ -15,9 +16,25 @@ import (
 	"github.com/nexora/nexora/shared/outbox"
 )
 
+// authorizationHoldTTL is how long a payment's hold lives at the ledger. It is
+// the fenced window in which the payment must reach a terminal state; a hold
+// that is never released expires on its own rather than stranding the money
+// forever, which is the failure mode that matters when a retry never arrives.
+const authorizationHoldTTL = "30m"
+
 type SagaStep func(ctx context.Context, payment *domain.Payment) error
 
 type CompensationStep func(ctx context.Context, payment *domain.Payment) error
+
+// FundHolder reserves and releases funds availability at the ledger of record.
+// Payment authorisation takes a hold so the money cannot be spent twice while
+// the payment is in flight; terminal outcomes give the hold back. Implemented
+// by clients.LedgerClient; nil in environments without a ledger (the saga then
+// skips holding, exactly as it did before holds existed).
+type FundHolder interface {
+	Reserve(ctx context.Context, accountID uuid.UUID, amount int64, currency string, txID uuid.UUID, ttl string) (*clients.LedgerReservation, error)
+	ReleaseReservation(ctx context.Context, reservationID uuid.UUID) error
+}
 
 type PaymentSaga struct {
 	paymentRepo    repository.PaymentRepository
@@ -26,6 +43,12 @@ type PaymentSaga struct {
 	logger         zerolog.Logger
 	producer       string
 	topicPrefix    string
+	holder         FundHolder
+}
+
+// SetFundHolder enables ledger-backed authorisation holds.
+func (s *PaymentSaga) SetFundHolder(h FundHolder) {
+	s.holder = h
 }
 
 func NewPaymentSaga(
@@ -142,6 +165,47 @@ func (s *PaymentSaga) ExecuteCreatePayment(ctx context.Context, req *domain.Crea
 		Metadata:         payment.Metadata,
 	}
 
+	// Claim the idempotency key before writing. The read above is only an
+	// optimisation: two requests that arrive together can both miss it and both
+	// insert, which would move money twice for one user action. The claim is a
+	// compare-and-set, so exactly one writer wins; the loser returns the
+	// winner's payment instead of creating a second one.
+	if claimer, ok := s.paymentRepo.(repository.IdempotencyClaimer); ok {
+		existingID, claimed, err := claimer.ClaimIdempotencyKey(ctx, req.IdempotencyKey, payment.PaymentID)
+		if err != nil {
+			return nil, fmt.Errorf("claiming idempotency key: %w", err)
+		}
+
+		if !claimed {
+			winner, err := s.loadClaimedPayment(ctx, existingID)
+			if err != nil {
+				return nil, fmt.Errorf("idempotency key %q is claimed by payment %s: %w", req.IdempotencyKey, existingID, err)
+			}
+			s.logger.Info().
+				Str("idempotency_key", req.IdempotencyKey).
+				Str("payment_id", winner.PaymentID.String()).
+				Msg("idempotency key already claimed, returning winning payment")
+			return winner, nil
+		}
+
+		if err := s.persistCreate(ctx, payment, events.EventTypePaymentCreated, eventPayload, correlationID); err != nil {
+			// Compensate: a claimed key with no payment would block the client's
+			// retry on its own key forever, so free it before failing.
+			if releaseErr := claimer.ReleaseIdempotencyClaim(ctx, req.IdempotencyKey); releaseErr != nil {
+				s.logger.Error().Err(releaseErr).
+					Str("idempotency_key", req.IdempotencyKey).
+					Msg("failed to release idempotency claim after create failure")
+			}
+			return nil, fmt.Errorf("storing payment with event: %w", err)
+		}
+
+		s.logger.Info().
+			Str("payment_id", payment.PaymentID.String()).
+			Msg("payment saga: created (idempotency key claimed)")
+
+		return payment, nil
+	}
+
 	if err := s.persistCreate(ctx, payment, events.EventTypePaymentCreated, eventPayload, correlationID); err != nil {
 		return nil, fmt.Errorf("storing payment with event: %w", err)
 	}
@@ -151,6 +215,36 @@ func (s *PaymentSaga) ExecuteCreatePayment(ctx context.Context, req *domain.Crea
 		Msg("payment saga: created")
 
 	return payment, nil
+}
+
+// loadClaimedPayment loads the payment that owns an idempotency key. The
+// winning writer persists the payment immediately after claiming the key, so a
+// loser of the race can arrive inside the window where the claim exists but the
+// row is not readable yet. A short bounded wait turns that transient state into
+// the winning payment instead of a spurious error for a user double-tapping.
+func (s *PaymentSaga) loadClaimedPayment(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
+	const attempts = 3
+	const wait = 20 * time.Millisecond
+
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		payment, err := s.paymentRepo.GetByID(ctx, paymentID)
+		if err == nil && payment != nil {
+			return payment, nil
+		}
+		lastErr = err
+		if i < attempts-1 {
+			select {
+			case <-time.After(wait):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("payment %s not found", paymentID)
 }
 
 func (s *PaymentSaga) ExecuteAuthorizePayment(ctx context.Context, paymentID string, correlationID string) (*domain.Payment, error) {
@@ -173,6 +267,38 @@ func (s *PaymentSaga) ExecuteAuthorizePayment(ctx context.Context, paymentID str
 		return nil, fmt.Errorf("cannot authorize payment in state %s, must be CREATED", payment.State)
 	}
 
+	// ── Hold the funds before the payment is authorised ─────────────────
+	// Authorising is a promise that the money is there. Without a hold the
+	// balance stays fully spendable while the payment is in flight, so the same
+	// money can be committed twice (a card spend plus this payment) and nothing
+	// notices until the settlement is booked. The hold is taken BEFORE the state
+	// change, and a refusal leaves the payment in CREATED: a payment that could
+	// not be funded must never look authorised.
+	if s.holder != nil {
+		reservation, err := s.holder.Reserve(ctx, payment.AccountID, payment.Amount, payment.Currency, payment.PaymentID, authorizationHoldTTL)
+		if err != nil {
+			if clients.IsInsufficientFunds(err) {
+				s.logger.Warn().
+					Str("payment_id", payment.PaymentID.String()).
+					Int64("amount", payment.Amount).
+					Msg("payment not authorised: insufficient available balance")
+				return nil, fmt.Errorf("%w: payment %s needs %d %s",
+					clients.ErrInsufficientFunds, payment.PaymentID, payment.Amount, payment.Currency)
+			}
+			// Fail closed. Treating a ledger outage as "no hold needed" would
+			// authorise payments against money we cannot prove exists.
+			s.logger.Error().Err(err).
+				Str("payment_id", payment.PaymentID.String()).
+				Msg("cannot hold funds, refusing to authorise payment")
+			return nil, fmt.Errorf("holding funds for payment %s: %w", payment.PaymentID, err)
+		}
+		payment.ReservationID = reservation.ReservationID.String()
+		s.logger.Info().
+			Str("payment_id", payment.PaymentID.String()).
+			Str("reservation_id", payment.ReservationID).
+			Msg("funds held for payment")
+	}
+
 	if err := payment.TransitionTo(domain.PaymentStateAuthorized); err != nil {
 		return nil, fmt.Errorf("transition failed: %w", err)
 	}
@@ -193,6 +319,10 @@ func (s *PaymentSaga) ExecuteAuthorizePayment(ctx context.Context, paymentID str
 	}
 
 	if err := s.persistTransition(ctx, payment, events.EventTypePaymentAuthorized, eventPayload, correlationID); err != nil {
+		// Compensate: the hold was taken for a transition we could not persist,
+		// so hand the funds straight back instead of leaving them held until
+		// the TTL expires.
+		s.releaseReservation(ctx, payment, correlationID, "authorization could not be persisted")
 		return nil, fmt.Errorf("persisting authorization: %w", err)
 	}
 
@@ -344,6 +474,12 @@ func (s *PaymentSaga) settlePayment(ctx context.Context, payment *domain.Payment
 		return
 	}
 
+	// The settlement event is durably in the outbox, so the ledger will book the
+	// real debit from it. The hold has done its job and must now be given back:
+	// holding AND debiting the same money would reduce the customer's available
+	// balance by the amount twice, permanently.
+	s.releaseReservation(ctx, payment, correlationID, "payment settled")
+
 	s.logger.Info().
 		Str("payment_id", payment.PaymentID.String()).
 		Msg("payment saga: settled")
@@ -387,7 +523,7 @@ func (s *PaymentSaga) failPayment(ctx context.Context, payment *domain.Payment, 
 		return
 	}
 
-	s.releaseReservation(ctx, payment, correlationID)
+	s.releaseReservation(ctx, payment, correlationID, reason)
 
 	s.logger.Info().
 		Str("payment_id", payment.PaymentID.String()).
@@ -469,7 +605,7 @@ func (s *PaymentSaga) ExecuteCancelPayment(ctx context.Context, paymentID string
 		return nil, fmt.Errorf("persisting cancellation: %w", err)
 	}
 
-	s.releaseReservation(ctx, payment, correlationID)
+	s.releaseReservation(ctx, payment, correlationID, "payment cancelled")
 
 	s.logger.Info().
 		Str("payment_id", payment.PaymentID.String()).
@@ -548,27 +684,68 @@ func (s *PaymentSaga) ExecuteHandleTimeout(ctx context.Context, paymentID string
 	return payment, nil
 }
 
-func (s *PaymentSaga) releaseReservation(ctx context.Context, payment *domain.Payment, correlationID string) {
+// releaseReservation gives a payment's hold back to the customer. It is the
+// compensation for every path where money did not leave the account: a failed
+// authorisation, a failed payment, a cancellation, or a settlement whose real
+// debit has already been booked. Failure here is never fatal to the caller's
+// state transition (that is already durable) but it is always logged loudly,
+// because an unreleased hold keeps the customer's money unusable until it
+// expires — money that is theirs and we cannot spend.
+//
+// The hold is deliberately NOT released on the UNKNOWN path: an unknown
+// provider outcome means the money may still have moved, so the funds stay
+// held and reconciliation decides. Releasing there would make a payment we
+// cannot account for spendable a second time.
+func (s *PaymentSaga) releaseReservation(ctx context.Context, payment *domain.Payment, correlationID, reason string) {
 	if payment.ReservationID == "" {
 		return
 	}
 
+	reservationID := payment.ReservationID
+
+	if s.holder != nil {
+		id, err := uuid.Parse(reservationID)
+		if err != nil {
+			s.logger.Error().Err(err).
+				Str("payment_id", payment.PaymentID.String()).
+				Str("reservation_id", reservationID).
+				Msg("hold has an unparseable reservation id; funds stay held until it expires")
+			return
+		}
+		if err := s.holder.ReleaseReservation(ctx, id); err != nil {
+			s.logger.Error().Err(err).
+				Str("payment_id", payment.PaymentID.String()).
+				Str("reservation_id", reservationID).
+				Str("reason", reason).
+				Msg("failed to release hold; funds stay held until the hold expires")
+			return
+		}
+	}
+
 	s.logger.Info().
 		Str("payment_id", payment.PaymentID.String()).
-		Str("reservation_id", payment.ReservationID).
-		Msg("releasing reservation")
+		Str("reservation_id", reservationID).
+		Str("reason", reason).
+		Msg("released payment hold")
+
+	// Cleared in memory so a second terminal handler in the same call chain
+	// cannot release the same hold twice.
+	payment.ReservationID = ""
 
 	eventPayload := events.PaymentEventPayload{
 		PaymentID:     payment.PaymentID.String(),
 		AccountID:     payment.AccountID.String(),
-UserID:           payment.UserID.String(),
-		ReservationID: payment.ReservationID,
+		UserID:        payment.UserID.String(),
+		ReservationID: reservationID,
 		Amount:        payment.Amount,
 		Currency:      payment.Currency,
 	}
 
-	if err := s.persistTransition(ctx, payment, events.EventTypePaymentReversed, eventPayload, correlationID); err != nil {
-		s.logger.Error().Err(err).Msg("failed to persist reservation release event")
+	// A dedicated event, not payment.reversed: reversal means money is going
+	// back to the customer, and a consumer that treats this release as a
+	// reversal would pay them again for a payment that never left.
+	if err := s.persistTransition(ctx, payment, events.EventTypePaymentReservationReleased, eventPayload, correlationID); err != nil {
+		s.logger.Error().Err(err).Msg("failed to persist hold-release event")
 	}
 }
 

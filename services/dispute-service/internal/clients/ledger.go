@@ -92,7 +92,7 @@ func (c *LedgerClient) BookRefund(ctx context.Context, accountID uuid.UUID, amou
 	// the account; the ledger's generic endpoint is used with a scheme-style
 	// idempotency key so retries cannot double-refund.
 	req := map[string]interface{}{
-		"idempotency_key": idempotencyKey,
+		"idempotency_key":  idempotencyKey,
 		"transaction_type": "REFUND",
 		"amount":           amount,
 		"currency":         currency,

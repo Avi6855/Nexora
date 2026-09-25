@@ -15,11 +15,11 @@ const (
 )
 
 type SystemHealth struct {
-	SystemID   uuid.UUID              `json:"system_id"`
-	Status     HealthStatus           `json:"status"`
-	Services   map[string]ServiceHealth `json:"services"`
-	Uptime     string                 `json:"uptime"`
-	CheckedAt  time.Time              `json:"checked_at"`
+	SystemID  uuid.UUID                `json:"system_id"`
+	Status    HealthStatus             `json:"status"`
+	Services  map[string]ServiceHealth `json:"services"`
+	Uptime    string                   `json:"uptime"`
+	CheckedAt time.Time                `json:"checked_at"`
 }
 
 type ServiceHealth struct {
@@ -41,21 +41,21 @@ type DependencyEdge struct {
 
 // GraphNode is one service in the dependency graph view.
 type GraphNode struct {
-	Name       string       `json:"name"`
-	Status     HealthStatus `json:"status"`
-	DependsOn  []string     `json:"depends_on"`
+	Name      string       `json:"name"`
+	Status    HealthStatus `json:"status"`
+	DependsOn []string     `json:"depends_on"`
 	// Worst upstream impact: how many services are (transitively) affected
 	// if this node degrades. Computed over the graph on every read.
-	BlastRadius int         `json:"blast_radius"`
+	BlastRadius int `json:"blast_radius"`
 }
 
 // DependencyGraph is the rendered health graph.
 type DependencyGraph struct {
-	Nodes      []GraphNode `json:"nodes"`
+	Nodes      []GraphNode      `json:"nodes"`
 	Edges      []DependencyEdge `json:"edges"`
-	Overall    HealthStatus `json:"overall"`
-	Advisories []string     `json:"advisories"`
-	CheckedAt  time.Time    `json:"checked_at"`
+	Overall    HealthStatus     `json:"overall"`
+	Advisories []string         `json:"advisories"`
+	CheckedAt  time.Time        `json:"checked_at"`
 }
 
 // HealthReport is what every service POSTs to the control plane on a timer.

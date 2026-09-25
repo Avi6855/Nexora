@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gorilla/mux"
-	"github.com/rs/zerolog"
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	"github.com/nexora/nexora/services/notification-service/internal/domain"
 	"github.com/nexora/nexora/services/notification-service/internal/service"
+	"github.com/rs/zerolog"
 )
 
 type Handlers struct {

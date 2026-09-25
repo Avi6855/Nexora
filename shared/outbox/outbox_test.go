@@ -106,8 +106,8 @@ func (m *memStore) get(id uuid.UUID) (*Event, bool) {
 
 type fakePublisher struct {
 	mu         sync.Mutex
-	publishErr error            // returned by every Publish call
-	dlqErr     error            // returned by every PublishDLQ call
+	publishErr error // returned by every Publish call
+	dlqErr     error // returned by every PublishDLQ call
 	published  []*Event
 	dlq        []*Event
 }

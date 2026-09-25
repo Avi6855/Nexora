@@ -26,22 +26,22 @@ type PotDepositor interface {
 // means the money really left the account (the ledger debit is booked), so
 // the spare change is backed by real cleared spend.
 type CapturedAuthorizationEvent struct {
-	AuthorizationID string  `json:"authorization_id"`
-	CardID          string  `json:"card_id"`
-	UserID          string  `json:"user_id"`
-	AccountID       string  `json:"account_id"`
-	Amount          int64   `json:"amount"`
-	Currency        string  `json:"currency"`
-	Merchant        string  `json:"merchant"`
-	MerchantCity    string  `json:"merchant_city"`
-	MerchantCountry string  `json:"merchant_country"`
-	TerminalID      string  `json:"terminal_id"`
-	Status          string  `json:"status"`
-	Decision        string  `json:"decision"`
-	ReservationID   string  `json:"reservation_id"`
-	BalanceAfter    *int64  `json:"balance_after"`
-	LatencyMs       int64   `json:"latency_ms"`
-	CreatedAt       string  `json:"created_at"`
+	AuthorizationID string `json:"authorization_id"`
+	CardID          string `json:"card_id"`
+	UserID          string `json:"user_id"`
+	AccountID       string `json:"account_id"`
+	Amount          int64  `json:"amount"`
+	Currency        string `json:"currency"`
+	Merchant        string `json:"merchant"`
+	MerchantCity    string `json:"merchant_city"`
+	MerchantCountry string `json:"merchant_country"`
+	TerminalID      string `json:"terminal_id"`
+	Status          string `json:"status"`
+	Decision        string `json:"decision"`
+	ReservationID   string `json:"reservation_id"`
+	BalanceAfter    *int64 `json:"balance_after"`
+	LatencyMs       int64  `json:"latency_ms"`
+	CreatedAt       string `json:"created_at"`
 }
 
 // RoundupConsumer consumes captured card authorizations and moves the
@@ -52,9 +52,9 @@ type CapturedAuthorizationEvent struct {
 // transfer is booked, so Kafka redelivery can never sweep the same payment
 // twice. The claim names the pot, which makes the sweep deterministic.
 type RoundupConsumer struct {
-	pots     PotDepositor
-	repo     repository.RoundupRepository
-	logger   zerolog.Logger
+	pots   PotDepositor
+	repo   repository.RoundupRepository
+	logger zerolog.Logger
 	// roundupTo lets tests and future multi-pot selection override which pot
 	// receives the round-up. nil selects the user's first active round-up pot.
 	roundupTo func(ctx context.Context, userID uuid.UUID) (uuid.UUID, error)

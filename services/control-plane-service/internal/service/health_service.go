@@ -5,8 +5,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/nexora/nexora/services/control-plane-service/internal/repository"
+	"github.com/rs/zerolog"
 )
 
 type HealthService struct {

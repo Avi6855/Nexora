@@ -8,11 +8,11 @@ import (
 type MetricType string
 
 const (
-	MetricCPU            MetricType = "cpu"
-	MetricMemory         MetricType = "memory"
-	MetricRequestRate    MetricType = "request_rate"
-	MetricPaymentRate    MetricType = "payment_rate"
-	MetricKafkaLag       MetricType = "kafka_lag"
+	MetricCPU              MetricType = "cpu"
+	MetricMemory           MetricType = "memory"
+	MetricRequestRate      MetricType = "request_rate"
+	MetricPaymentRate      MetricType = "payment_rate"
+	MetricKafkaLag         MetricType = "kafka_lag"
 	MetricCassandraLatency MetricType = "cassandra_latency"
 )
 
@@ -31,14 +31,14 @@ type CapacityEstimate struct {
 }
 
 type ScalingRecommendation struct {
-	Service    string  `json:"service"`
-	Metric     string  `json:"metric"`
-	Current    float64 `json:"current"`
-	Target     float64 `json:"target"`
-	Action     string  `json:"action"`
-	Instances  int     `json:"instances"`
-	Priority   string  `json:"priority"`
-	Message    string  `json:"message"`
+	Service   string  `json:"service"`
+	Metric    string  `json:"metric"`
+	Current   float64 `json:"current"`
+	Target    float64 `json:"target"`
+	Action    string  `json:"action"`
+	Instances int     `json:"instances"`
+	Priority  string  `json:"priority"`
+	Message   string  `json:"message"`
 }
 
 type MetricsCollector interface {
@@ -51,19 +51,19 @@ type MetricsCollector interface {
 }
 
 type CapacityEngine struct {
-	metrics    MetricsCollector
-	history    []MetricValue
+	metrics         MetricsCollector
+	history         []MetricValue
 	recommendations []ScalingRecommendation
-	mu         sync.RWMutex
-	thresholds *CapacityThresholds
+	mu              sync.RWMutex
+	thresholds      *CapacityThresholds
 }
 
 type CapacityThresholds struct {
-	CPUHigh             float64
-	MemoryHigh          float64
-	RequestRateHigh     float64
-	PaymentRateHigh     float64
-	KafkaLagHigh        float64
+	CPUHigh              float64
+	MemoryHigh           float64
+	RequestRateHigh      float64
+	PaymentRateHigh      float64
+	KafkaLagHigh         float64
 	CassandraLatencyHigh float64
 }
 
@@ -80,19 +80,19 @@ func DefaultCapacityThresholds() *CapacityThresholds {
 
 func NewCapacityEngine(metrics MetricsCollector) *CapacityEngine {
 	return &CapacityEngine{
-		metrics:        metrics,
-		history:        make([]MetricValue, 0),
+		metrics:         metrics,
+		history:         make([]MetricValue, 0),
 		recommendations: make([]ScalingRecommendation, 0),
-		thresholds:     DefaultCapacityThresholds(),
+		thresholds:      DefaultCapacityThresholds(),
 	}
 }
 
 func NewCapacityEngineWithThresholds(metrics MetricsCollector, thresholds *CapacityThresholds) *CapacityEngine {
 	return &CapacityEngine{
-		metrics:        metrics,
-		history:        make([]MetricValue, 0),
+		metrics:         metrics,
+		history:         make([]MetricValue, 0),
 		recommendations: make([]ScalingRecommendation, 0),
-		thresholds:     thresholds,
+		thresholds:      thresholds,
 	}
 }
 

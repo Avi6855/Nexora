@@ -97,6 +97,16 @@ func main() {
 		paymentService.SetFraudClient(fraudClient)
 		logger.Info().Msg("scam-intelligence gate enabled (fraud-service)")
 	}
+	// ── Authorisation holds ─────────────────────────────────────────────
+	// Authorising a payment holds the amount at the ledger of record, so the
+	// same money cannot be spent twice while the payment is in flight. A hold
+	// that cannot be taken refuses the payment (fail closed). Enabled only when
+	// a ledger endpoint is configured, so local runs without the stack keep
+	// working exactly as before.
+	if ledgerURL := os.Getenv("LEDGER_SERVICE_URL"); ledgerURL != "" {
+		paymentService.SetFundHolder(clients.NewLedgerClient(logger))
+		logger.Info().Str("ledger_url", ledgerURL).Msg("ledger authorisation holds enabled")
+	}
 	paymentService.SetAccountClient(clients.NewAccountClient())
 
 	handlers := transport.NewHandlers(paymentService, logger)

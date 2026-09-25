@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/gocql/gocql"
 	"github.com/google/uuid"
@@ -34,6 +35,26 @@ type PaymentRepository interface {
 type AtomicEventWriter interface {
 	CreateWithEvents(ctx context.Context, payment *domain.Payment, events []*outbox.Event) error
 	UpdateWithEvents(ctx context.Context, payment *domain.Payment, events []*outbox.Event) error
+}
+
+// IdempotencyClaimer is implemented by repositories backed by a store that
+// supports compare-and-set (Cassandra LWT).
+//
+// A read-then-insert on the idempotency key is a TOCTOU race: two requests
+// that arrive together both see "no payment yet" and both insert, so one user
+// action creates two payments and moves money twice. Claiming the key with
+// `INSERT ... IF NOT EXISTS` makes exactly one writer win; the loser learns the
+// winner's payment_id and returns that payment instead of creating a second.
+//
+// Repositories without CAS (in-memory doubles, tests) simply do not implement
+// this interface and the saga falls back to the read-then-create path.
+type IdempotencyClaimer interface {
+	// ClaimIdempotencyKey claims key for paymentID. claimed=false means another
+	// writer already owns the key and existingPaymentID is theirs.
+	ClaimIdempotencyKey(ctx context.Context, key string, paymentID uuid.UUID) (existingPaymentID uuid.UUID, claimed bool, err error)
+	// ReleaseIdempotencyClaim frees a claim this caller owns, so a failed
+	// create does not leave the key permanently claimed with no payment.
+	ReleaseIdempotencyClaim(ctx context.Context, key string) error
 }
 
 type cassandraPaymentRepository struct {
@@ -339,6 +360,36 @@ func (r *cassandraPaymentRepository) UpdateWithEvents(ctx context.Context, payme
 	)
 	addOutboxQueries(batch, events)
 	return r.session.ExecuteBatch(batch)
+}
+
+// ── Idempotency claim (LWT) ─────────────────────────────────────────────────
+
+const idempotencyClaimInsert = `INSERT INTO payment_idempotency (idempotency_key, payment_id, created_at)
+	VALUES (?, ?, ?) IF NOT EXISTS`
+
+const idempotencyClaimDelete = `DELETE FROM payment_idempotency WHERE idempotency_key = ?`
+
+func (r *cassandraPaymentRepository) ClaimIdempotencyKey(ctx context.Context, key string, paymentID uuid.UUID) (uuid.UUID, bool, error) {
+	var (
+		existingKey string
+		existingID  gocql.UUID
+		existingAt  time.Time
+	)
+
+	applied, err := r.session.Query(idempotencyClaimInsert, key, cassandra.UID(paymentID), time.Now().UTC()).
+		WithContext(ctx).
+		ScanCAS(&existingKey, &existingID, &existingAt)
+	if err != nil {
+		return uuid.Nil, false, fmt.Errorf("claiming idempotency key: %w", err)
+	}
+	if applied {
+		return uuid.Nil, true, nil
+	}
+	return uuid.UUID(existingID), false, nil
+}
+
+func (r *cassandraPaymentRepository) ReleaseIdempotencyClaim(ctx context.Context, key string) error {
+	return r.session.Query(idempotencyClaimDelete, key).WithContext(ctx).Exec()
 }
 
 func addOutboxQueries(batch *gocql.Batch, events []*outbox.Event) {

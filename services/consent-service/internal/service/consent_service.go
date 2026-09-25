@@ -127,11 +127,11 @@ func (s *ConsentService) Evaluate(ctx context.Context, req *EvaluateRequest) (*E
 		!now.Before(g.StartsAt)
 
 	resp := &EvaluateResponse{
-		GrantID:  g.GrantID,
-		OwnerID:  g.OwnerUserID,
-		Scope:    string(req.Scope),
-		Allowed:  allowed,
-		Reason:   "scope granted and window open",
+		GrantID:     g.GrantID,
+		OwnerID:     g.OwnerUserID,
+		Scope:       string(req.Scope),
+		Allowed:     allowed,
+		Reason:      "scope granted and window open",
 		EvaluatedAt: now,
 	}
 	if !allowed {

@@ -17,16 +17,16 @@ type CassandraConfig struct {
 }
 
 type KafkaConfig struct {
-	Brokers  []string
-	GroupID  string
+	Brokers     []string
+	GroupID     string
 	TopicPrefix string
 }
 
 type ServiceConfig struct {
-	Name    string
-	Port    int
+	Name     string
+	Port     int
 	GRPCPort int
-	Version string
+	Version  string
 }
 
 type AuthConfig struct {

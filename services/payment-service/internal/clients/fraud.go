@@ -31,12 +31,12 @@ type TransferRiskRequest struct {
 
 // TransferRiskResponse mirrors fraud-service domain.TransferRiskResponse.
 type TransferRiskResponse struct {
-	RequestID  string   `json:"request_id"`
-	Action     string   `json:"action"` // ALLOW | REVIEW | STEP_UP | BLOCK
-	RiskScore  float64  `json:"risk_score"`
-	RiskLevel  string   `json:"risk_level"`
-	Reasons    []string `json:"reasons"`
-	Advice     string   `json:"advice,omitempty"`
+	RequestID   string    `json:"request_id"`
+	Action      string    `json:"action"` // ALLOW | REVIEW | STEP_UP | BLOCK
+	RiskScore   float64   `json:"risk_score"`
+	RiskLevel   string    `json:"risk_level"`
+	Reasons     []string  `json:"reasons"`
+	Advice      string    `json:"advice,omitempty"`
 	EvaluatedAt time.Time `json:"evaluated_at"`
 }
 

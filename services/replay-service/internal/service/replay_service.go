@@ -7,12 +7,12 @@ import (
 	"sort"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/google/uuid"
 	"github.com/nexora/nexora/services/replay-service/internal/clients"
 	"github.com/nexora/nexora/services/replay-service/internal/domain"
 	"github.com/nexora/nexora/services/replay-service/internal/events"
 	"github.com/nexora/nexora/services/replay-service/internal/repository"
+	"github.com/rs/zerolog"
 )
 
 type ReplayService struct {
@@ -263,11 +263,16 @@ func (s *ReplayService) TimeTravel(ctx context.Context, accountID uuid.UUID, at 
 		ReplayID:       uuid.New(),
 		OriginalResult: json.RawMessage(fmt.Sprintf(`{"account_id":%q,"snapshot_at":%q,"balance":%d}`, accountID, at.Format(time.RFC3339), backwards)),
 		ReplayedResult: json.RawMessage(fmt.Sprintf(`{"forward_balance":%d,"entries":%d}`, forward, seen)),
-		Differences:    func() []domain.ReplayDifference { if !deterministic { return []domain.ReplayDifference{*result.Divergence} }; return []domain.ReplayDifference{} }(),
-		Steps:          []domain.ReplayStep{},
-		Deterministic:  deterministic,
-		TotalEvents:    seen,
-		ReplayedAt:     now,
+		Differences: func() []domain.ReplayDifference {
+			if !deterministic {
+				return []domain.ReplayDifference{*result.Divergence}
+			}
+			return []domain.ReplayDifference{}
+		}(),
+		Steps:         []domain.ReplayStep{},
+		Deterministic: deterministic,
+		TotalEvents:   seen,
+		ReplayedAt:    now,
 	})
 
 	return result, nil

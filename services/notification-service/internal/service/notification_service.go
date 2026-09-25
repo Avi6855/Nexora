@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/google/uuid"
 	"github.com/nexora/nexora/services/notification-service/internal/domain"
 	"github.com/nexora/nexora/services/notification-service/internal/events"
 	"github.com/nexora/nexora/services/notification-service/internal/realtime"
 	"github.com/nexora/nexora/services/notification-service/internal/repository"
+	"github.com/rs/zerolog"
 )
 
 type NotificationService struct {

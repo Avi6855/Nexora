@@ -62,56 +62,56 @@ const (
 )
 
 type Payment struct {
-	PaymentID            uuid.UUID            `json:"payment_id"`
-	IdempotencyKey       string               `json:"idempotency_key"`
-	AccountID            uuid.UUID            `json:"account_id"`
-	UserID               uuid.UUID            `json:"user_id"`
-	PaymentType          PaymentType          `json:"payment_type"`
-	Amount               int64                `json:"amount"`
-	Currency             string               `json:"currency"`
-	State                PaymentState         `json:"state"`
-	FailureReason        string               `json:"failure_reason,omitempty"`
-	CounterpartyID       string               `json:"counterparty_id"`
-	CounterpartyName     string               `json:"counterparty_name"`
-	Reference            string               `json:"reference"`
-	FraudScore           float64              `json:"fraud_score,omitempty"`
-	FraudAction          string               `json:"fraud_action,omitempty"`
-	LedgerTransactionID  string               `json:"ledger_transaction_id,omitempty"`
-	ReservationID        string               `json:"reservation_id,omitempty"`
-	Metadata             map[string]string    `json:"metadata,omitempty"`
-	CreatedAt            time.Time            `json:"created_at"`
-	UpdatedAt            time.Time            `json:"updated_at"`
-	AuthorizedAt         *time.Time           `json:"authorized_at,omitempty"`
-	SettledAt            *time.Time           `json:"settled_at,omitempty"`
-	ProviderResponse     *ProviderResponse    `json:"provider_response,omitempty"`
+	PaymentID           uuid.UUID         `json:"payment_id"`
+	IdempotencyKey      string            `json:"idempotency_key"`
+	AccountID           uuid.UUID         `json:"account_id"`
+	UserID              uuid.UUID         `json:"user_id"`
+	PaymentType         PaymentType       `json:"payment_type"`
+	Amount              int64             `json:"amount"`
+	Currency            string            `json:"currency"`
+	State               PaymentState      `json:"state"`
+	FailureReason       string            `json:"failure_reason,omitempty"`
+	CounterpartyID      string            `json:"counterparty_id"`
+	CounterpartyName    string            `json:"counterparty_name"`
+	Reference           string            `json:"reference"`
+	FraudScore          float64           `json:"fraud_score,omitempty"`
+	FraudAction         string            `json:"fraud_action,omitempty"`
+	LedgerTransactionID string            `json:"ledger_transaction_id,omitempty"`
+	ReservationID       string            `json:"reservation_id,omitempty"`
+	Metadata            map[string]string `json:"metadata,omitempty"`
+	CreatedAt           time.Time         `json:"created_at"`
+	UpdatedAt           time.Time         `json:"updated_at"`
+	AuthorizedAt        *time.Time        `json:"authorized_at,omitempty"`
+	SettledAt           *time.Time        `json:"settled_at,omitempty"`
+	ProviderResponse    *ProviderResponse `json:"provider_response,omitempty"`
 }
 
 type ProviderResponse struct {
-	ProviderID      string    `json:"provider_id"`
-	TransactionRef  string    `json:"transaction_ref"`
-	Status          string    `json:"status"`
-	Message         string    `json:"message,omitempty"`
-	ResponseCode    string    `json:"response_code,omitempty"`
-	ReceivedAt      time.Time `json:"received_at"`
+	ProviderID     string    `json:"provider_id"`
+	TransactionRef string    `json:"transaction_ref"`
+	Status         string    `json:"status"`
+	Message        string    `json:"message,omitempty"`
+	ResponseCode   string    `json:"response_code,omitempty"`
+	ReceivedAt     time.Time `json:"received_at"`
 }
 
 func NewPayment(idempotencyKey string, accountID, userID uuid.UUID, paymentType PaymentType, amount int64, currency, counterpartyID, counterpartyName, reference string) *Payment {
 	now := time.Now().UTC()
 	return &Payment{
-		PaymentID:       uuid.New(),
-		IdempotencyKey:  idempotencyKey,
-		AccountID:       accountID,
-		UserID:          userID,
-		PaymentType:     paymentType,
-		Amount:          amount,
-		Currency:        currency,
-		State:           PaymentStateCreated,
-		CounterpartyID:  counterpartyID,
+		PaymentID:        uuid.New(),
+		IdempotencyKey:   idempotencyKey,
+		AccountID:        accountID,
+		UserID:           userID,
+		PaymentType:      paymentType,
+		Amount:           amount,
+		Currency:         currency,
+		State:            PaymentStateCreated,
+		CounterpartyID:   counterpartyID,
 		CounterpartyName: counterpartyName,
-		Reference:       reference,
-		Metadata:        make(map[string]string),
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		Reference:        reference,
+		Metadata:         make(map[string]string),
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 }
 
@@ -134,16 +134,16 @@ func (p *Payment) TransitionTo(target PaymentState) error {
 }
 
 type CreatePaymentRequest struct {
-	IdempotencyKey  string            `json:"idempotency_key"`
-	AccountID       string            `json:"account_id"`
-	UserID          string            `json:"user_id,omitempty"`
-	PaymentType     PaymentType       `json:"payment_type"`
-	Amount          int64             `json:"amount"`
-	Currency        string            `json:"currency"`
-	CounterpartyID  string            `json:"counterparty_id"`
-	CounterpartyName string           `json:"counterparty_name"`
-	Reference       string            `json:"reference"`
-	Metadata        map[string]string `json:"metadata,omitempty"`
+	IdempotencyKey   string            `json:"idempotency_key"`
+	AccountID        string            `json:"account_id"`
+	UserID           string            `json:"user_id,omitempty"`
+	PaymentType      PaymentType       `json:"payment_type"`
+	Amount           int64             `json:"amount"`
+	Currency         string            `json:"currency"`
+	CounterpartyID   string            `json:"counterparty_id"`
+	CounterpartyName string            `json:"counterparty_name"`
+	Reference        string            `json:"reference"`
+	Metadata         map[string]string `json:"metadata,omitempty"`
 }
 
 type ProcessPaymentRequest struct {

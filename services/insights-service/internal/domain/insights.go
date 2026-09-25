@@ -55,18 +55,18 @@ type Baseline struct {
 // SafeToSpend is the daily decision the app surfaces on Home: what is left to
 // spend today before the account runs past its buffer before payday.
 type SafeToSpend struct {
-	AccountID       uuid.UUID        `json:"account_id"`
-	AvailableNow    int64            `json:"available_now"`
-	UpcomingBills   int64            `json:"upcoming_bills"`
-	ForecastSpend   int64            `json:"forecast_spend_month"`
-	ForecastDaily   int64            `json:"forecast_daily"`
-	Buffer          int64            `json:"buffer"`
-	SafeToSpend     int64            `json:"safe_to_spend"`
+	AccountID        uuid.UUID       `json:"account_id"`
+	AvailableNow     int64           `json:"available_now"`
+	UpcomingBills    int64           `json:"upcoming_bills"`
+	ForecastSpend    int64           `json:"forecast_spend_month"`
+	ForecastDaily    int64           `json:"forecast_daily"`
+	Buffer           int64           `json:"buffer"`
+	SafeToSpend      int64           `json:"safe_to_spend"`
 	SafeToSpendDaily int64           `json:"safe_to_spend_daily"`
-	DaysToPayday    int              `json:"days_to_payday"`
-	ExpectedPayday  *time.Time       `json:"expected_payday,omitempty"`
-	ExpectedIncome  int64            `json:"expected_income"`
-	CategoryTotals  []CategorySpend  `json:"category_totals"`
+	DaysToPayday     int             `json:"days_to_payday"`
+	ExpectedPayday   *time.Time      `json:"expected_payday,omitempty"`
+	ExpectedIncome   int64           `json:"expected_income"`
+	CategoryTotals   []CategorySpend `json:"category_totals"`
 }
 
 // CategorySpend is one row of the category breakdown in SafeToSpend.
@@ -80,13 +80,13 @@ type CategorySpend struct {
 // hike, income detected, anomaly). Persisted for the Insights feed and
 // published to nexora.insights.alerts for the notification/SSE pipeline.
 type InsightAlert struct {
-	AccountID uuid.UUID    `json:"account_id"`
-	AlertID   uuid.UUID    `json:"alert_id"`
-	AlertType string       `json:"alert_type"`
-	Title     string       `json:"title"`
-	Body      string       `json:"body"`
-	Payload   string       `json:"payload,omitempty"`
-	CreatedAt time.Time    `json:"created_at"`
+	AccountID uuid.UUID `json:"account_id"`
+	AlertID   uuid.UUID `json:"alert_id"`
+	AlertType string    `json:"alert_type"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	Payload   string    `json:"payload,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 const (

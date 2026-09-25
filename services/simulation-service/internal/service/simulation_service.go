@@ -5,16 +5,16 @@ import (
 	"math"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/google/uuid"
 	"github.com/nexora/nexora/services/simulation-service/internal/domain"
 	"github.com/nexora/nexora/services/simulation-service/internal/events"
 	"github.com/nexora/nexora/services/simulation-service/internal/repository"
+	"github.com/rs/zerolog"
 )
 
 type SimulationService struct {
-	repo     repository.SimulationRepository
-	producer *events.KafkaProducer
+	repo        repository.SimulationRepository
+	producer    *events.KafkaProducer
 	simulations map[uuid.UUID]*domain.Simulation
 	logger      zerolog.Logger
 }

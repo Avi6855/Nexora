@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/google/uuid"
 	"github.com/nexora/nexora/services/audit-service/internal/domain"
 	"github.com/nexora/nexora/services/audit-service/internal/events"
 	"github.com/nexora/nexora/services/audit-service/internal/repository"
+	"github.com/rs/zerolog"
 )
 
 type AuditService struct {

@@ -20,11 +20,11 @@ const httpTimeout = 2 * time.Second
 
 // FraudDecision is the subset of the fraud response the card platform acts on.
 type FraudDecision struct {
-	Decision string `json:"decision"` // APPROVE | REVIEW | DECLINE
-	RiskScore float64 `json:"risk_score"`
-	RiskLevel string  `json:"risk_level"`
-	Reasons  []string `json:"reasons"`
-	Signals  []json.RawMessage `json:"signals"`
+	Decision  string            `json:"decision"` // APPROVE | REVIEW | DECLINE
+	RiskScore float64           `json:"risk_score"`
+	RiskLevel string            `json:"risk_level"`
+	Reasons   []string          `json:"reasons"`
+	Signals   []json.RawMessage `json:"signals"`
 }
 
 type FraudClient struct {
@@ -146,11 +146,11 @@ type LedgerReservation struct {
 
 // LedgerEntry mirrors a settled ledger entry (carries the real balance_after).
 type LedgerEntry struct {
-	EntryID       uuid.UUID `json:"entry_id"`
-	EntryType     string    `json:"entry_type"`
-	Amount        int64     `json:"amount"`
-	BalanceAfter  int64     `json:"balance_after"`
-	CreatedAt     time.Time `json:"created_at"`
+	EntryID      uuid.UUID `json:"entry_id"`
+	EntryType    string    `json:"entry_type"`
+	Amount       int64     `json:"amount"`
+	BalanceAfter int64     `json:"balance_after"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type LedgerClient struct {
@@ -272,6 +272,69 @@ func (c *LedgerClient) ReleaseReservation(ctx context.Context, reservationID uui
 	}
 	return nil
 }
+
+// Refund credits the customer for a captured card presentment. The ledger of
+// record owns both legs (customer CREDIT + suspense-account DEBIT, written as
+// one balanced batch) and the idempotency key makes the credit exactly-once,
+// so a retried refund can never pay the customer twice. It returns the
+// customer's own entry so the caller can publish the real balance afterwards.
+func (c *LedgerClient) Refund(ctx context.Context, accountID uuid.UUID, amount int64, currency, idempotencyKey, description string) (*LedgerEntry, error) {
+	body, _ := json.Marshal(map[string]interface{}{
+		"account_id":      accountID.String(),
+		"amount":          amount,
+		"currency":        currency,
+		"idempotency_key": idempotencyKey,
+		"description":     description,
+	})
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/ledger/refunds", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	auth.AddInternalToken(httpReq)
+
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("ledger service unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ledger refund returned %d: %s", resp.StatusCode, string(data))
+	}
+
+	var payload struct {
+		Entries []struct {
+			AccountID    uuid.UUID `json:"account_id"`
+			EntryID      uuid.UUID `json:"entry_id"`
+			EntryType    string    `json:"entry_type"`
+			Amount       int64     `json:"amount"`
+			BalanceAfter int64     `json:"balance_after"`
+			CreatedAt    time.Time `json:"created_at"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, err
+	}
+	// The refund pair is [clearing DEBIT, customer CREDIT]; pick the customer's
+	// own leg rather than assuming a position in the array.
+	for _, e := range payload.Entries {
+		if e.AccountID == accountID && e.EntryType == string(entryTypeCredit) {
+			return &LedgerEntry{
+				EntryID:      e.EntryID,
+				EntryType:    e.EntryType,
+				Amount:       e.Amount,
+				BalanceAfter: e.BalanceAfter,
+				CreatedAt:    e.CreatedAt,
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("ledger refund response did not contain the customer credit leg: %s", string(data))
+}
+
+// entryTypeCredit mirrors the ledger's CREDIT entry type without importing the
+// ledger service's domain package.
+const entryTypeCredit = "CREDIT"
 
 // SpentToday sums the real DEBIT entries booked for the account since local
 // midnight. Reads the account's actual ledger entries so card daily-limit

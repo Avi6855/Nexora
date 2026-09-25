@@ -25,10 +25,10 @@ type HotPartitionRisk struct {
 }
 
 type TrafficSkew struct {
-	TotalPartitions int                    `json:"total_partitions"`
-	TopPartitions   []PartitionMetric      `json:"top_partitions"`
-	SkewFactor      float64                `json:"skew_factor"`
-	IsSkewed        bool                   `json:"is_skewed"`
+	TotalPartitions int               `json:"total_partitions"`
+	TopPartitions   []PartitionMetric `json:"top_partitions"`
+	SkewFactor      float64           `json:"skew_factor"`
+	IsSkewed        bool              `json:"is_skewed"`
 }
 
 type HotPartitionDetector struct {
@@ -38,9 +38,9 @@ type HotPartitionDetector struct {
 }
 
 type DetectorThresholds struct {
-	HotPartitionTraffic  int64
-	SkewFactorThreshold  float64
-	HighLatencyMs        float64
+	HotPartitionTraffic int64
+	SkewFactorThreshold float64
+	HighLatencyMs       float64
 }
 
 func DefaultDetectorThresholds() *DetectorThresholds {

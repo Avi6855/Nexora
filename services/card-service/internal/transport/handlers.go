@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -44,6 +45,11 @@ func (h *Handlers) RegisterRoutes(router *mux.Router) {
 	router.HandleFunc("/v1/cards/{id}/authorizations/{auth_id}", h.GetAuthorization).Methods("GET")
 	router.HandleFunc("/v1/cards/{id}/authorizations/{auth_id}/capture", h.CaptureAuthorization).Methods("POST")
 	router.HandleFunc("/v1/cards/{id}/authorizations/{auth_id}/void", h.VoidAuthorization).Methods("POST")
+
+	// PSD2 strong customer authentication (3-D Secure step-up) and refunds.
+	router.HandleFunc("/v1/cards/{id}/authorizations/{auth_id}/challenge", h.GetSCAChallenge).Methods("GET")
+	router.HandleFunc("/v1/cards/{id}/authorizations/{auth_id}/challenge", h.CompleteSCAChallenge).Methods("POST")
+	router.HandleFunc("/v1/cards/{id}/authorizations/{auth_id}/refund", h.RefundAuthorization).Methods("POST")
 }
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -287,10 +293,100 @@ func (h *Handlers) AuthorizeCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := http.StatusOK
-	if auth.Status == domain.AuthStatusDeclined {
+	switch auth.Status {
+	case domain.AuthStatusDeclined:
 		status = http.StatusPaymentRequired // 402 signals a declined presentment
+	case domain.AuthStatusChallenged:
+		// 202: the presentment is accepted but not yet decided — the merchant
+		// must send the cardholder to the 3-D Secure step-up.
+		status = http.StatusAccepted
 	}
 	h.recordDecision(auth)
+	respondJSON(w, status, auth)
+}
+
+// GetSCAChallenge returns the outstanding step-up for a presentment so the app
+// can render it. The one-time code digest is never serialised.
+func (h *Handlers) GetSCAChallenge(w http.ResponseWriter, r *http.Request) {
+	cardID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid card ID")
+		return
+	}
+	authID, err := parseUUIDParam(r, "auth_id")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid authorization ID")
+		return
+	}
+	auth, err := h.authService.GetAuthorization(r.Context(), authID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if auth.CardID != cardID {
+		respondError(w, http.StatusNotFound, "authorization not found for this card")
+		return
+	}
+
+	challenge, err := h.authService.GetSCAChallenge(r.Context(), authID)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrChallengeNotFound), errors.Is(err, domain.ErrAuthNotFound):
+			respondError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, domain.ErrSCANotConfigured):
+			respondError(w, http.StatusNotImplemented, err.Error())
+		default:
+			respondError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	respondJSON(w, http.StatusOK, challenge)
+}
+
+// CompleteSCAChallenge answers a step-up with the one-time code the cardholder
+// received. A correct code approves the presentment (and only then holds the
+// funds); a wrong code consumes an attempt; an exhausted or expired challenge
+// declines it.
+func (h *Handlers) CompleteSCAChallenge(w http.ResponseWriter, r *http.Request) {
+	cardID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid card ID")
+		return
+	}
+	authID, err := parseUUIDParam(r, "auth_id")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid authorization ID")
+		return
+	}
+
+	var req domain.CompleteSCAChallengeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	auth, err := h.authService.CompleteSCAChallenge(r.Context(), cardID, authID, &req)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrAuthNotFound), errors.Is(err, domain.ErrChallengeNotFound), errors.Is(err, domain.ErrAuthCardMismatch):
+			respondError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, domain.ErrAuthNotChallenged), errors.Is(err, domain.ErrChallengeStale):
+			respondError(w, http.StatusConflict, err.Error())
+		case errors.Is(err, domain.ErrChallengeOTP):
+			// 401: the code was wrong but the challenge is still answerable.
+			respondError(w, http.StatusUnauthorized, err.Error())
+		case errors.Is(err, domain.ErrSCANotConfigured):
+			respondError(w, http.StatusNotImplemented, err.Error())
+		default:
+			respondError(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+
+	status := http.StatusOK
+	if auth.Status == domain.AuthStatusDeclined {
+		status = http.StatusPaymentRequired
+	}
 	respondJSON(w, status, auth)
 }
 
@@ -302,7 +398,14 @@ func (h *Handlers) recordDecision(auth *domain.CardAuthorization) {
 	}
 	reason := auth.DeclineReason
 	if reason == "" {
-		reason = "approved"
+		switch auth.Decision {
+		case domain.AuthDecisionApprove:
+			reason = "approved"
+		case domain.AuthDecisionChallenge:
+			reason = "challenged"
+		default:
+			reason = strings.ToLower(string(auth.Decision))
+		}
 	}
 	h.authDecisions.With(map[string]string{
 		"outcome": string(auth.Decision),
@@ -398,6 +501,43 @@ func (h *Handlers) VoidAuthorization(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusNotFound, err.Error())
 		case errors.Is(err, domain.ErrAuthNotVoidable):
 			respondError(w, http.StatusConflict, err.Error())
+		default:
+			respondError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	respondJSON(w, http.StatusOK, auth)
+}
+
+// RefundAuthorization credits a captured presentment back to the customer.
+// Partial refunds are allowed; the captured amount is the ceiling.
+func (h *Handlers) RefundAuthorization(w http.ResponseWriter, r *http.Request) {
+	cardID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid card ID")
+		return
+	}
+	authID, err := parseUUIDParam(r, "auth_id")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid authorization ID")
+		return
+	}
+
+	var req domain.RefundAuthorizationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	auth, err := h.authService.RefundAuthorization(r.Context(), cardID, authID, &req)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrAuthNotFound), errors.Is(err, domain.ErrAuthCardMismatch):
+			respondError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, domain.ErrAuthNotRefundable):
+			respondError(w, http.StatusConflict, err.Error())
+		case errors.Is(err, domain.ErrRefundAmount), errors.Is(err, domain.ErrRefundOverCaptured):
+			respondError(w, http.StatusBadRequest, err.Error())
 		default:
 			respondError(w, http.StatusInternalServerError, err.Error())
 		}

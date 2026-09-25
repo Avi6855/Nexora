@@ -42,18 +42,18 @@ type PolicyDecision struct {
 }
 
 type DigitalTwin struct {
-	AccountID         uuid.UUID `json:"account_id"`
-	UserID            uuid.UUID `json:"user_id"`
-	Balance           int64     `json:"balance"`
-	Available         int64     `json:"available"`
-	Reserved          int64     `json:"reserved"`
-	Currency          string    `json:"currency"`
-	Status            string    `json:"status"`
-	SnapshotTime      time.Time `json:"snapshot_time"`
-	RecentTransactions int     `json:"recent_transactions"`
-	AverageTxAmount   int64     `json:"average_tx_amount"`
-	MaxTxAmount       int64     `json:"max_tx_amount"`
-	TxCountToday      int       `json:"tx_count_today"`
+	AccountID          uuid.UUID `json:"account_id"`
+	UserID             uuid.UUID `json:"user_id"`
+	Balance            int64     `json:"balance"`
+	Available          int64     `json:"available"`
+	Reserved           int64     `json:"reserved"`
+	Currency           string    `json:"currency"`
+	Status             string    `json:"status"`
+	SnapshotTime       time.Time `json:"snapshot_time"`
+	RecentTransactions int       `json:"recent_transactions"`
+	AverageTxAmount    int64     `json:"average_tx_amount"`
+	MaxTxAmount        int64     `json:"max_tx_amount"`
+	TxCountToday       int       `json:"tx_count_today"`
 }
 
 type SimulatePaymentRequest struct {
@@ -71,13 +71,13 @@ type SimulateTransferRequest struct {
 }
 
 type SimulationResult struct {
-	WouldSucceed        bool             `json:"would_succeed"`
-	PredictedBalance    int64            `json:"predicted_balance"`
-	PredictedAvailable  int64            `json:"predicted_available"`
-	RiskScore           float64          `json:"risk_score"`
-	PolicyDecisions     []PolicyDecision `json:"policy_decisions"`
-	Reasons             []string         `json:"reasons"`
-	SimulatedAt         time.Time        `json:"simulated_at"`
+	WouldSucceed       bool             `json:"would_succeed"`
+	PredictedBalance   int64            `json:"predicted_balance"`
+	PredictedAvailable int64            `json:"predicted_available"`
+	RiskScore          float64          `json:"risk_score"`
+	PolicyDecisions    []PolicyDecision `json:"policy_decisions"`
+	Reasons            []string         `json:"reasons"`
+	SimulatedAt        time.Time        `json:"simulated_at"`
 }
 
 type CounterfactualPayment struct {

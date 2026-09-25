@@ -135,6 +135,10 @@ const (
     EventTypePaymentReversed   EventType = "payment.reversed"
     EventTypePaymentCancelled  EventType = "payment.cancelled"
     EventTypePaymentUnknown    EventType = "payment.unknown"
+    // A hold given back (payment failed or was cancelled before money moved).
+    // Deliberately not payment.reversed: reversal means money returning to the
+    // customer, so a consumer acting on that would credit them twice.
+    EventTypePaymentReservationReleased EventType = "payment.reservation.released"
 
     // Ledger events
     EventTypeLedgerTransactionCreated EventType = "ledger.transaction.created"

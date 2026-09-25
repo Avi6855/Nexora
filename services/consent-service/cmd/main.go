@@ -30,7 +30,10 @@ func main() {
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
 		With().Timestamp().Logger()
 
-	cfg := config.LoadServiceConfig("consent-service", 8097, 8197)
+	// 8100/8200: incident-service already owns 8097 (see docker-compose.yml and
+	// envoy/envoy.yaml). Reusing its port made the documented port map ambiguous
+	// and collided for any on-host run.
+	cfg := config.LoadServiceConfig("consent-service", 8100, 8200)
 
 	cluster := gocql.NewCluster(cfg.Cassandra.Hosts...)
 	cluster.Keyspace = cfg.Cassandra.Keyspace

@@ -221,6 +221,18 @@ CREATE INDEX IF NOT EXISTS idx_payments_account
 CREATE INDEX IF NOT EXISTS idx_payments_idempotency
   ON payments (idempotency_key);
 
+-- ── Payment idempotency claims ───────────────────────────────────────────────
+-- LWT claim on the client's idempotency key. Read-then-insert through the
+-- idempotency_key index is a TOCTOU race: two concurrent requests with the
+-- same key both read nil and both insert, creating two payments for one
+-- user action. The saga claims the key here first (INSERT IF NOT EXISTS),
+-- and a loser of the race reads the winner's payment_id instead of writing.
+CREATE TABLE IF NOT EXISTS payment_idempotency (
+  idempotency_key TEXT PRIMARY KEY,
+  payment_id UUID,
+  created_at TIMESTAMP
+);
+
 -- ── Transfers ────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS transfers (
   transfer_id UUID PRIMARY KEY,
@@ -292,12 +304,58 @@ CREATE TABLE IF NOT EXISTS card_authorizations (
   risk_level TEXT,
   risk_reasons TEXT,
   reservation_id UUID,
+  challenge_id UUID,
+  sca_exemption TEXT,
   status TEXT,
   latency_ms BIGINT,
   created_at TIMESTAMP,
   updated_at TIMESTAMP,
   captured_at TIMESTAMP,
-  voided_at TIMESTAMP
+  voided_at TIMESTAMP,
+  refunded_amount BIGINT,
+  refunded_at TIMESTAMP
+);
+
+-- SCA / 3-D Secure step-ups raised by the card platform for presentments the
+-- issuer could not exempt under PSD2. The row is bound to one authorization
+-- (cardholder, account, amount, merchant) so a code can only ever authenticate
+-- the presentment it was raised for. Only the SHA-256 digest of the one-time
+-- code is stored; the attempt counter bounds a brute-force search and every
+-- state change is a lightweight transaction (single use across replicas).
+CREATE TABLE IF NOT EXISTS card_sca_challenges (
+  challenge_id UUID PRIMARY KEY,
+  authorization_id UUID,
+  card_id UUID,
+  user_id UUID,
+  account_id UUID,
+  amount BIGINT,
+  currency TEXT,
+  merchant TEXT,
+  otp_hash TEXT,
+  attempts INT,
+  max_attempts INT,
+  status TEXT,
+  failure_reason TEXT,
+  expires_at TIMESTAMP,
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP,
+  completed_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_card_sca_authz
+  ON card_sca_challenges (authorization_id);
+
+-- Time-bucketed expiry index for step-ups. Cassandra cannot range-read by
+-- expires_at, so each challenge is also written into the hourly bucket its
+-- deadline falls in, where expires_at is a clustering column: the expiry sweep
+-- reads the buckets covering the challenge TTL with a bounded range query
+-- instead of a table scan. Rows carry a TTL so a bucket retires itself even if
+-- the sweep never runs.
+CREATE TABLE IF NOT EXISTS card_sca_challenges_by_expiry (
+  bucket TEXT,
+  expires_at TIMESTAMP,
+  challenge_id UUID,
+  PRIMARY KEY ((bucket), expires_at, challenge_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_card_authz_card

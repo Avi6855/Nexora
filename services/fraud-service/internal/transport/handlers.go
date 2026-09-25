@@ -5,9 +5,9 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/rs/zerolog"
 	"github.com/nexora/nexora/services/fraud-service/internal/domain"
 	"github.com/nexora/nexora/services/fraud-service/internal/service"
+	"github.com/rs/zerolog"
 )
 
 type Handlers struct {

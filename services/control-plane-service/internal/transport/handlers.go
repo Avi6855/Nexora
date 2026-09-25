@@ -5,19 +5,19 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/rs/zerolog"
 	"github.com/nexora/nexora/services/control-plane-service/internal/domain"
 	"github.com/nexora/nexora/services/control-plane-service/internal/regimpact"
 	"github.com/nexora/nexora/services/control-plane-service/internal/regreport"
 	"github.com/nexora/nexora/services/control-plane-service/internal/service"
+	"github.com/rs/zerolog"
 )
 
 type Handlers struct {
-	healthService *service.HealthService
+	healthService     *service.HealthService
 	dependencyService *service.DependencyService
-	regImpact     *regimpact.Analyzer
-	regReport     *regreport.Builder
-	logger        zerolog.Logger
+	regImpact         *regimpact.Analyzer
+	regReport         *regreport.Builder
+	logger            zerolog.Logger
 }
 
 func NewHandlers(healthService *service.HealthService, dependencyService *service.DependencyService, logger zerolog.Logger) *Handlers {

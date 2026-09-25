@@ -10,13 +10,13 @@ import (
 type NotificationType string
 
 const (
-	NotificationTypeTransaction  NotificationType = "TRANSACTION"
-	NotificationTypeSecurity     NotificationType = "SECURITY"
-	NotificationTypeFraud        NotificationType = "FRAUD"
-	NotificationTypePromo        NotificationType = "PROMO"
-	NotificationTypeSystem       NotificationType = "SYSTEM"
-	NotificationTypePayment      NotificationType = "PAYMENT"
-	NotificationTypeIncident     NotificationType = "INCIDENT"
+	NotificationTypeTransaction NotificationType = "TRANSACTION"
+	NotificationTypeSecurity    NotificationType = "SECURITY"
+	NotificationTypeFraud       NotificationType = "FRAUD"
+	NotificationTypePromo       NotificationType = "PROMO"
+	NotificationTypeSystem      NotificationType = "SYSTEM"
+	NotificationTypePayment     NotificationType = "PAYMENT"
+	NotificationTypeIncident    NotificationType = "INCIDENT"
 )
 
 type NotificationChannel string
@@ -72,12 +72,12 @@ func NewNotificationWithMetadata(userID uuid.UUID, nType NotificationType, chann
 }
 
 type SendNotificationRequest struct {
-	UserID           string             `json:"user_id"`
-	NotificationType NotificationType   `json:"notification_type"`
+	UserID           string              `json:"user_id"`
+	NotificationType NotificationType    `json:"notification_type"`
 	Channel          NotificationChannel `json:"channel"`
-	Title            string             `json:"title"`
-	Body             string             `json:"body"`
-	Metadata         json.RawMessage    `json:"metadata,omitempty"`
+	Title            string              `json:"title"`
+	Body             string              `json:"body"`
+	Metadata         json.RawMessage     `json:"metadata,omitempty"`
 }
 
 type NotificationEvent struct {

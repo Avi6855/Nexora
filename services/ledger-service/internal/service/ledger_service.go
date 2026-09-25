@@ -357,7 +357,15 @@ func (s *LedgerService) SettleReservation(ctx context.Context, reservationID uui
 		balance = 0
 	}
 
-	entry := &domain.LedgerEntry{
+	description := fmt.Sprintf("settlement of reservation %s", reservationID.String())
+
+	// Settling a hold moves money OUT of the customer's account, so it needs
+	// both legs: the customer is debited and the clearing account credited.
+	// Writing the debit alone (as this used to) leaves total debits exceeding
+	// total credits for the whole ledger — every card capture silently broke
+	// the books-balance invariant — and the pair is written as one logged batch
+	// so a crash cannot leave a half-settlement behind.
+	debit := &domain.LedgerEntry{
 		EntryID:        uuid.New(),
 		AccountID:      res.AccountID,
 		TransactionID:  res.TransactionID,
@@ -367,22 +375,81 @@ func (s *LedgerService) SettleReservation(ctx context.Context, reservationID uui
 		Currency:       res.Currency,
 		BalanceBefore:  balance,
 		BalanceAfter:   balance - res.Amount,
-		Description:    fmt.Sprintf("settlement of reservation %s", reservationID.String()),
+		Description:    description,
 		Category:       domain.CategoryOther,
 		EventVersion:   1,
 		CreatedAt:      now,
 	}
 
-	if err := s.ledgerRepo.CreateEntry(ctx, entry); err != nil {
-		return nil, fmt.Errorf("creating settlement entry: %w", err)
+	clearingBalance, err := s.ledgerRepo.GetLatestBalance(ctx, domain.ClearingAccountID)
+	if err != nil {
+		clearingBalance = 0
+	}
+
+	credit := &domain.LedgerEntry{
+		EntryID:        uuid.New(),
+		AccountID:      domain.ClearingAccountID,
+		TransactionID:  res.TransactionID,
+		EntryType:      domain.EntryTypeCredit,
+		EntryDirection: domain.EntryDirectionInbound,
+		Amount:         res.Amount,
+		Currency:       res.Currency,
+		BalanceBefore:  clearingBalance,
+		BalanceAfter:   clearingBalance + res.Amount,
+		Description:    description,
+		Category:       domain.CategoryOther,
+		EventVersion:   1,
+		CreatedAt:      now,
+	}
+
+	if err := s.ledgerRepo.CreateEntryPair(ctx, debit, credit); err != nil {
+		return nil, fmt.Errorf("creating settlement entries: %w", err)
 	}
 
 	s.logger.Info().
 		Str("reservation_id", reservationID.String()).
-		Str("entry_id", entry.EntryID.String()).
-		Msg("reservation settled")
+		Str("entry_id", debit.EntryID.String()).
+		Int64("amount", res.Amount).
+		Msg("reservation settled as a balanced double-entry")
 
-	return entry, nil
+	return debit, nil
+}
+
+// RecordPaymentBookingFailure makes a refused money movement visible to an
+// operator. A payment that the ledger refuses to book (no available balance) or
+// cannot book (write failure) is a divergence between what the payment service
+// believes — it settled — and what the ledger records, so it is filed as an
+// integrity event on the account and, when incident reporting is wired, as an
+// incident. Logging alone is not enough: logs scroll away, and this is money.
+func (s *LedgerService) RecordPaymentBookingFailure(ctx context.Context, paymentID, accountID uuid.UUID, reason string) error {
+	detail := fmt.Sprintf("payment %s could not be booked against account %s: %s", paymentID, accountID, reason)
+
+	if s.incidents != nil {
+		if incidentID, err := s.incidents.FileIntegrityIncident(ctx, accountID.String(), paymentID.String(), detail); err != nil {
+			s.logger.Error().Err(err).Str("payment_id", paymentID.String()).Msg("failed to file incident for refused payment booking")
+		} else {
+			s.logger.Warn().Str("payment_id", paymentID.String()).Str("incident_id", incidentID).Msg("filed incident for refused payment booking")
+		}
+	}
+
+	event := &domain.IntegrityEvent{
+		AccountID:  accountID,
+		EventID:    uuid.New(),
+		EventType:  domain.IntegrityEventBookingRefused,
+		Message:    "Payment booking refused by the ledger",
+		Detail:     detail,
+		DetectedAt: time.Now().UTC(),
+	}
+	if err := s.ledgerRepo.InsertIntegrityEvent(ctx, event); err != nil {
+		return fmt.Errorf("recording refused booking: %w", err)
+	}
+
+	s.logger.Warn().
+		Str("payment_id", paymentID.String()).
+		Str("account_id", accountID.String()).
+		Msg("recorded refused payment booking for operator follow-up")
+
+	return nil
 }
 
 func (s *LedgerService) GetEntries(ctx context.Context, accountID uuid.UUID, limit int) ([]*domain.LedgerEntry, error) {

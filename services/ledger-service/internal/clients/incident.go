@@ -41,9 +41,9 @@ func NewIncidentClient() *IncidentClient {
 // FileIntegrityIncident creates a SEV1 incident via the internal API.
 func (c *IncidentClient) FileIntegrityIncident(ctx context.Context, accountID, entryID, message string) (string, error) {
 	body, err := json.Marshal(map[string]interface{}{
-		"title":            "Ledger integrity violation detected",
-		"description":      message,
-		"severity":         "SEV1",
+		"title":             "Ledger integrity violation detected",
+		"description":       message,
+		"severity":          "SEV1",
 		"affected_services": []string{"ledger-service"},
 	})
 	if err != nil {

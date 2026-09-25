@@ -28,23 +28,23 @@ const (
 )
 
 type ReconciliationCase struct {
-	CaseID            uuid.UUID              `json:"case_id"`
-	PaymentID         uuid.UUID              `json:"payment_id"`
-	InternalState     string                 `json:"internal_state"`
-	ExternalState     string                 `json:"external_state"`
-	InternalAmount    int64                  `json:"internal_amount"`
-	ExternalAmount    int64                  `json:"external_amount"`
-	Currency          string                 `json:"currency"`
-	Status            ReconciliationStatus   `json:"status"`
-	Resolution        ResolutionType         `json:"resolution,omitempty"`
-	DiscrepancyReason string                 `json:"discrepancy_reason,omitempty"`
-	ProviderRef       string                 `json:"provider_ref,omitempty"`
-	AttemptCount      int                    `json:"attempt_count"`
-	MaxAttempts       int                    `json:"max_attempts"`
-	CreatedAt         time.Time              `json:"created_at"`
-	UpdatedAt         time.Time              `json:"updated_at"`
-	ResolvedAt        *time.Time             `json:"resolved_at,omitempty"`
-	AuditTrail        []ReconciliationAudit  `json:"audit_trail,omitempty"`
+	CaseID            uuid.UUID             `json:"case_id"`
+	PaymentID         uuid.UUID             `json:"payment_id"`
+	InternalState     string                `json:"internal_state"`
+	ExternalState     string                `json:"external_state"`
+	InternalAmount    int64                 `json:"internal_amount"`
+	ExternalAmount    int64                 `json:"external_amount"`
+	Currency          string                `json:"currency"`
+	Status            ReconciliationStatus  `json:"status"`
+	Resolution        ResolutionType        `json:"resolution,omitempty"`
+	DiscrepancyReason string                `json:"discrepancy_reason,omitempty"`
+	ProviderRef       string                `json:"provider_ref,omitempty"`
+	AttemptCount      int                   `json:"attempt_count"`
+	MaxAttempts       int                   `json:"max_attempts"`
+	CreatedAt         time.Time             `json:"created_at"`
+	UpdatedAt         time.Time             `json:"updated_at"`
+	ResolvedAt        *time.Time            `json:"resolved_at,omitempty"`
+	AuditTrail        []ReconciliationAudit `json:"audit_trail,omitempty"`
 }
 
 type ReconciliationAudit struct {
@@ -130,14 +130,14 @@ type RunScheduledReconciliationRequest struct {
 }
 
 type ReconcileResult struct {
-	CaseID          uuid.UUID          `json:"case_id"`
-	PaymentID       uuid.UUID          `json:"payment_id"`
-	Matched         bool               `json:"matched"`
-	InternalState   string             `json:"internal_state"`
-	ExternalState   string             `json:"external_state"`
-	Resolution      ResolutionType     `json:"resolution,omitempty"`
-	Discrepancy     string             `json:"discrepancy_reason,omitempty"`
-	ReconciledAt    time.Time          `json:"reconciled_at"`
+	CaseID        uuid.UUID      `json:"case_id"`
+	PaymentID     uuid.UUID      `json:"payment_id"`
+	Matched       bool           `json:"matched"`
+	InternalState string         `json:"internal_state"`
+	ExternalState string         `json:"external_state"`
+	Resolution    ResolutionType `json:"resolution,omitempty"`
+	Discrepancy   string         `json:"discrepancy_reason,omitempty"`
+	ReconciledAt  time.Time      `json:"reconciled_at"`
 }
 
 type ErrorResponse struct {

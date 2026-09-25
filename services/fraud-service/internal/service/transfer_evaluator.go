@@ -175,31 +175,31 @@ func (e *TransferEvaluator) Evaluate(ctx context.Context, req *domain.TransferRi
 	}
 
 	resp := &domain.TransferRiskResponse{
-		RequestID:  requestID,
-		Action:     action,
-		RiskScore:  total,
-		RiskLevel:  level,
-		Reasons:    agg.reasons,
-		Signals:    agg.signals,
-		Advice:     advice,
+		RequestID:   requestID,
+		Action:      action,
+		RiskScore:   total,
+		RiskLevel:   level,
+		Reasons:     agg.reasons,
+		Signals:     agg.signals,
+		Advice:      advice,
 		EvaluatedAt: now,
 	}
 
 	// Persist the decision over the user's real history so future decisions
 	// (and velocity checks) see this transfer attempt too.
 	analysis := &domain.FraudAnalysis{
-		AnalysisID:  uuid.New(),
-		PaymentID:   parseOrNew(req.RequestID),
-		UserID:      userID,
-		RiskScore:   total,
-		RiskAction:  action,
-		RiskLevel:   level,
-		DeviceID:    req.DeviceID,
-		IPAddress:   req.IPAddress,
-		Amount:      req.Amount,
-		Currency:    req.Currency,
-		Merchant:    req.CounterpartyName,
-		CreatedAt:   now,
+		AnalysisID: uuid.New(),
+		PaymentID:  parseOrNew(req.RequestID),
+		UserID:     userID,
+		RiskScore:  total,
+		RiskAction: action,
+		RiskLevel:  level,
+		DeviceID:   req.DeviceID,
+		IPAddress:  req.IPAddress,
+		Amount:     req.Amount,
+		Currency:   req.Currency,
+		Merchant:   req.CounterpartyName,
+		CreatedAt:  now,
 	}
 	_ = e.repo.CreateAnalysis(ctx, analysis)
 

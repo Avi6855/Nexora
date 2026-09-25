@@ -23,6 +23,7 @@ import (
 	"github.com/nexora/nexora/shared/auth"
 	"github.com/nexora/nexora/shared/config"
 	"github.com/nexora/nexora/shared/health"
+	"github.com/nexora/nexora/shared/schemes"
 	"github.com/nexora/nexora/shared/telemetry"
 )
 
@@ -61,6 +62,7 @@ func main() {
 
 	cardRepo := repository.NewCassandraCardRepository(session)
 	authRepo := repository.NewCassandraAuthorizationRepository(session)
+	challengeRepo := repository.NewCassandraSCAChallengeRepository(session)
 	cardService := service.NewCardService(cardRepo, publisher, logger)
 	authService := service.NewAuthorizationService(
 		cardRepo,
@@ -74,6 +76,39 @@ func main() {
 	// Emergency-lockdown enforcement: card presentments against a locked
 	// account decline immediately with account_locked.
 	authService.SetAccountClient(clients.NewAccountClient())
+
+	// PSD2 strong customer authentication: card-not-present presentments the
+	// policy cannot exempt go through a 3-D Secure step-up before any funds are
+	// held. NEXORA_SCA_DISABLED switches the issuer policy off for environments
+	// that must not challenge (for example a load test of the happy path).
+	scaPolicy := schemes.DefaultSCAPolicy()
+	if os.Getenv("NEXORA_SCA_DISABLED") == "true" {
+		scaPolicy.Enabled = false
+	}
+	authService.EnableSCA(scaPolicy, challengeRepo)
+
+	// Expiry sweep: an unanswered step-up is declined once its deadline passes.
+	// The transition is single use, so running this on every instance is safe.
+	if scaPolicy.Enabled {
+		sweepCtx, stopSweep := context.WithCancel(context.Background())
+		defer stopSweep()
+		go func() {
+			ticker := time.NewTicker(time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-sweepCtx.Done():
+					return
+				case now := <-ticker.C:
+					if closed, err := authService.SweepExpiredChallenges(context.Background(), now.UTC()); err != nil {
+						logger.Warn().Err(err).Msg("sca expiry sweep failed")
+					} else if closed > 0 {
+						logger.Info().Int("closed", closed).Msg("sca expiry sweep closed stale step-ups")
+					}
+				}
+			}
+		}()
+	}
 
 	metricsRegistry := telemetry.NewRegistry()
 	handlers := transport.NewHandlers(cardService, authService, logger, metricsRegistry)

@@ -205,6 +205,9 @@ services:
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
+      # Enables ledger-backed authorisation holds: the amount is held when the
+      # payment is authorised and released on failure/cancellation/settlement.
+      LEDGER_SERVICE_URL: http://ledger-service:8084
       JWT_SECRET: ${JWT_SECRET}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     networks:
@@ -402,9 +405,9 @@ services:
       cassandra:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8100:8097"
+      - "127.0.0.1:8100:8100"
     environment:
-      SERVICE_PORT: "8097"
+      SERVICE_PORT: "8100"
       CASSANDRA_HOSTS: ${CASSANDRA_HOSTS}
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
@@ -413,7 +416,7 @@ services:
     networks:
       - nexora-network
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8197/live"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8200/live"]
       interval: 15s
       timeout: 5s
       retries: 10

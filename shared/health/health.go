@@ -22,9 +22,9 @@ type HealthCheck struct {
 }
 
 type HealthServer struct {
-	checks   map[string]HealthFunc
-	mu       sync.RWMutex
-	server   *http.Server
+	checks map[string]HealthFunc
+	mu     sync.RWMutex
+	server *http.Server
 }
 
 type HealthFunc func(ctx context.Context) error

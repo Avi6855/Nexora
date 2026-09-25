@@ -44,20 +44,20 @@ type SpendingControls struct {
 }
 
 type Card struct {
-	CardID           uuid.UUID      `json:"card_id"`
-	UserID           uuid.UUID      `json:"user_id"`
-	AccountID        uuid.UUID      `json:"account_id"`
-	CardNumber       string         `json:"card_number,omitempty"`
-	CardNumberLast4  string         `json:"card_number_last4"`
-	CardType         CardType       `json:"card_type"`
-	Status           CardStatus     `json:"status"`
-	SpendingLimit    int64          `json:"spending_limit"`
-	DailyLimit       int64          `json:"daily_limit"`
-	MonthlyLimit     int64          `json:"monthly_limit"`
+	CardID           uuid.UUID        `json:"card_id"`
+	UserID           uuid.UUID        `json:"user_id"`
+	AccountID        uuid.UUID        `json:"account_id"`
+	CardNumber       string           `json:"card_number,omitempty"`
+	CardNumberLast4  string           `json:"card_number_last4"`
+	CardType         CardType         `json:"card_type"`
+	Status           CardStatus       `json:"status"`
+	SpendingLimit    int64            `json:"spending_limit"`
+	DailyLimit       int64            `json:"daily_limit"`
+	MonthlyLimit     int64            `json:"monthly_limit"`
 	SpendingControls SpendingControls `json:"spending_controls"`
-	Currency         string         `json:"currency"`
-	CreatedAt        time.Time      `json:"created_at"`
-	UpdatedAt        time.Time      `json:"updated_at"`
+	Currency         string           `json:"currency"`
+	CreatedAt        time.Time        `json:"created_at"`
+	UpdatedAt        time.Time        `json:"updated_at"`
 }
 
 // AuthorizeChannelControls returns the effective channel flags for an
@@ -174,12 +174,12 @@ type UpdateControlsRequest struct {
 }
 
 type CreateCardRequest struct {
-	AccountID    string   `json:"account_id"`
-	CardType     CardType `json:"card_type"`
-	SpendingLimit int64   `json:"spending_limit"`
-	DailyLimit    int64   `json:"daily_limit"`
-	MonthlyLimit  int64   `json:"monthly_limit"`
-	Currency     string   `json:"currency"`
+	AccountID     string   `json:"account_id"`
+	CardType      CardType `json:"card_type"`
+	SpendingLimit int64    `json:"spending_limit"`
+	DailyLimit    int64    `json:"daily_limit"`
+	MonthlyLimit  int64    `json:"monthly_limit"`
+	Currency      string   `json:"currency"`
 }
 
 type UpdateLimitsRequest struct {

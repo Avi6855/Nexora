@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/google/uuid"
 	"github.com/nexora/nexora/services/policy-service/internal/domain"
 	"github.com/nexora/nexora/services/policy-service/internal/events"
 	"github.com/nexora/nexora/services/policy-service/internal/repository"
+	"github.com/rs/zerolog"
 )
 
 type PolicyService struct {
@@ -177,10 +177,10 @@ func (s *PolicyService) EvaluatePayment(ctx context.Context, req *domain.Evaluat
 	}
 
 	return &domain.EvaluatePaymentResponse{
-		FinalDecision:  finalDecision,
+		FinalDecision:   finalDecision,
 		PolicyDecisions: allDecisions,
-		MatchedRules:   allMatchedRules,
-		Reasons:        allReasons,
+		MatchedRules:    allMatchedRules,
+		Reasons:         allReasons,
 	}, nil
 }
 
@@ -225,12 +225,12 @@ func (s *PolicyService) RunShadowPolicy(ctx context.Context, req *domain.ShadowC
 
 	shadowDecision := s.evaluatePolicy(paymentCtx, *shadowPolicy)
 	shadowResult := domain.PolicyDecision{
-		PolicyID:    shadowPolicyID,
-		PolicyName:  shadowPolicy.Name,
-		Action:      domain.PolicyDecisionAllow,
+		PolicyID:     shadowPolicyID,
+		PolicyName:   shadowPolicy.Name,
+		Action:       domain.PolicyDecisionAllow,
 		MatchedRules: make([]domain.MatchedRule, 0),
-		Reasons:     make([]string, 0),
-		EvaluatedAt: time.Now().UTC(),
+		Reasons:      make([]string, 0),
+		EvaluatedAt:  time.Now().UTC(),
 	}
 	if shadowDecision != nil {
 		shadowResult = *shadowDecision

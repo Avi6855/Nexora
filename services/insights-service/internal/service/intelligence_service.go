@@ -27,10 +27,10 @@ type AlertPublisher interface {
 // subscription detection, price-hike detection, income detection and
 // safe-to-spend.
 type IntelligenceService struct {
-	repo         repository.Repository
-	ledger       *clients.LedgerClient
-	alerts       AlertPublisher
-	logger       zerolog.Logger
+	repo   repository.Repository
+	ledger *clients.LedgerClient
+	alerts AlertPublisher
+	logger zerolog.Logger
 
 	// safeToSpendFloorPct of monthly income is kept as buffer in
 	// safe-to-spend (Monzo-style "leave a little behind").
@@ -326,7 +326,7 @@ func (s *IntelligenceService) GetSafeToSpend(ctx context.Context, accountID uuid
 		for next.Before(now) {
 			next = next.AddDate(0, 1, 0)
 		}
-		daysToPayday = int(next.Sub(now).Hours() / 24) + 1
+		daysToPayday = int(next.Sub(now).Hours()/24) + 1
 		expectedPayday = &next
 	}
 	if daysToPayday <= 0 {

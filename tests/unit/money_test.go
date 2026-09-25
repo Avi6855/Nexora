@@ -62,12 +62,12 @@ func TestMustNewMoney(t *testing.T) {
 
 func TestMoneyAdd(t *testing.T) {
 	tests := []struct {
-		name    string
-		a       int64
-		b       int64
+		name     string
+		a        int64
+		b        int64
 		currency string
-		want    int64
-		wantErr bool
+		want     int64
+		wantErr  bool
 	}{
 		{"positive add", 1000, 500, "GBP", 1500, false},
 		{"zero add", 1000, 0, "GBP", 1000, false},
@@ -223,10 +223,10 @@ func TestMoneySplitInvalid(t *testing.T) {
 
 func TestMoneyString(t *testing.T) {
 	tests := []struct {
-		name   string
-		amount int64
+		name     string
+		amount   int64
 		currency string
-		want   string
+		want     string
 	}{
 		{"GBP positive", 1050, "GBP", "10.50 GBP"},
 		{"GBP zero", 0, "GBP", "0.00 GBP"},

@@ -39,6 +39,7 @@ func (h *Handlers) RegisterRoutes(router *mux.Router) {
 	router.HandleFunc("/v1/ledger/reservations/{id}/settle", h.SettleReservation).Methods("POST")
 	router.HandleFunc("/v1/ledger/verify/{id}", h.VerifyIntegrity).Methods("GET")
 	router.HandleFunc("/v1/ledger/transfers", h.BookTransfer).Methods("POST")
+	router.HandleFunc("/v1/ledger/refunds", h.BookRefund).Methods("POST")
 	// ── Ledger invariant monitor ──
 	router.HandleFunc("/v1/ledger/integrity/scan", h.ScanIntegrity).Methods("POST")
 	router.HandleFunc("/v1/ledger/integrity/events", h.ListIntegrityEvents).Methods("GET")
@@ -167,6 +168,38 @@ func (h *Handlers) BookTransfer(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		if err == domain.ErrInvalidAmount || err == domain.ErrInvalidCurrency {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, map[string]interface{}{
+		"transaction": tx,
+		"entries":     entries,
+	})
+}
+
+// BookRefund credits a customer for money returning from outside the bank (a
+// merchant refund of a settled card presentment). It books the customer credit
+// and the clearing counter-debit as one balanced pair, and it is idempotent on
+// the refund key so a retry cannot pay the customer twice.
+func (h *Handlers) BookRefund(w http.ResponseWriter, r *http.Request) {
+	var req domain.RefundRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	tx, entries, err := h.ledgerService.BookRefund(r.Context(), &req)
+	if err != nil {
 		if err == domain.ErrInvalidAmount || err == domain.ErrInvalidCurrency {
 			respondError(w, http.StatusBadRequest, err.Error())
 			return

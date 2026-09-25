@@ -2,6 +2,16 @@
 
 A production-style digital banking platform built with event-driven architecture, featuring a native Android application and a Go microservices backend.
 
+> **Reviewing this repository?** Start with
+> [docs/REVIEWERS_GUIDE.md](docs/REVIEWERS_GUIDE.md) — a five-minute path
+> through the money-correctness machinery, naming the test that proves each
+> invariant, plus an honest list of what the platform does *not* prove yet.
+
+**Scale:** 20 Go services · 545 REST endpoints · 73 shared platform packages ·
+54 Cassandra tables · 70 Kafka topics · 147 Go test files (**856 test functions,
+and the whole suite runs without Docker, Cassandra or Kafka**) · 13 Android
+feature modules · 30 ADRs.
+
 ## Architecture Overview
 
 ```
@@ -117,7 +127,10 @@ make test
 | Policy Service | 8094 | Business rules, compliance |
 | Audit Service | 8095 | Audit logging, compliance |
 | Control Plane | 8096 | Service orchestration |
-| Incident Service | 8097 | Incident management |
+| Incident Service | 8097 | Incident management, compensation policies |
+| Dispute Service | 8098 | Chargeback orchestration, evidence, adjustments |
+| Consent Service | 8100 | Consent centre, delegated access, open banking, AI gateway |
+| Insights Service | 8099 | Financial intelligence: subscriptions, safe-to-spend, runway |
 
 ### Platform Capabilities (shared libraries)
 
@@ -147,6 +160,7 @@ make test
 | `shared/vendors` | External SLA monitor (per-observation breach semantics), capability registry, zero-downtime credential rotation, maintenance-window coordination |
 | `shared/compliance` | Regulatory rule distribution with acknowledgements, time-travel compliance, reporting evidence chains, impact analyzer, config lifecycle/drift, service safe mode |
 | `shared/cards` | Merchant-locked virtual cards, programmable authorization rules, credential continuity after reissue, lifecycle saga, delivery-exception recovery |
+| `shared/schemes` | Card-scheme certification, routing and settlement windows, fee attribution, and **PSD2 strong customer authentication**: the exemption policy (card-present CVM, low value, transaction-risk analysis, merchant-initiated, trusted beneficiary) plus the 3-D Secure one-time-code challenge lifecycle (hashed code, constant-time compare, attempt bound, expiry, single use) |
 | `shared/credit` | Credit limit simulator, repayment strategy optimiser, bureau correction cases, decision-policy sandbox, fairness monitoring on both sides of a split |
 | `shared/mortgage` | Affordability workspace, async document state machine (provider-outage tolerant), offer-expiry protection |
 | `shared/investments` | HMRC-shared ISA allowance as one gateway (correction-exact), joint goals over individual wrappers, tax-lot engine (FIFO/LIFO/HIFO), deterministic corporate actions |
@@ -210,6 +224,9 @@ make logs
 ## Testing
 
 ```bash
+# Everything at once (root module + shared library + all 20 service modules)
+make test-all
+
 # Unit tests
 make test-unit
 
@@ -276,6 +293,8 @@ make status
 - [ADR-033: Engineering Platform as Product & Operational Economics](docs/adr/ADR-033-engplatform-economics.md)
 - [ADR-034: Domain Platform Suites (Cards, Credit, Mortgage, Investments, Life Events, Identity, Open Banking)](docs/adr/ADR-034-domain-platform-suites.md)
 - [ADR-035: Data Platform Governance at 100+ Teams](docs/adr/ADR-035-dataplatform-governance.md)
+- [ADR-036: Money-Path Invariants Are Enforced by the Ledger, Not Assumed](docs/adr/ADR-036-money-path-invariants.md)
+- [ADR-037: Strong Customer Authentication as a Step-Up State, Not a Flag](docs/adr/ADR-037-psd2-sca-step-up.md)
 
 ## License
 
