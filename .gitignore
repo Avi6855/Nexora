@@ -46,3 +46,13 @@ cassandra/data/
 # Temp
 *.tmp
 *.log
+
+# Showcase / personal branding material (LinkedIn cards, banners, deck,
+# application kit). These are working documents, not part of the codebase.
+docs/showcase/
+
+# Local agent workspace state
+.freebuff/
+
+# Personal working prompt notes
+*Master Prompt.md
