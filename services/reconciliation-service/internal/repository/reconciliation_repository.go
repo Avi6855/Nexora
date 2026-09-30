@@ -100,6 +100,9 @@ func (r *cassandraReconciliationRepository) GetCasesByStatus(ctx context.Context
 		limit = 100
 	}
 	var cases []*domain.ReconciliationCase
+	// idx_recon_cases_status backs the sweep's "what is still PENDING?" lookup.
+	// ALLOW FILTERING keeps the statement valid on a cluster created before
+	// that index existed, so a schema roll-out cannot take the sweep down.
 	query := `SELECT case_id, payment_id, internal_state, external_state, internal_amount, external_amount, currency, status, resolution, discrepancy_reason, provider_ref, attempt_count, max_attempts, created_at, updated_at, resolved_at
 		FROM reconciliation_cases WHERE status = ? LIMIT ? ALLOW FILTERING`
 	iter := r.session.Query(query, string(status), limit).WithContext(ctx).Iter()

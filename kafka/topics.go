@@ -3,19 +3,24 @@ package kafka
 const (
 	TopicPrefix = "nexora"
 
-	TopicUserRegistered             = "nexora.user.registered"
-	TopicUserUpdated                = "nexora.user.updated"
-	TopicUserDeactivated            = "nexora.user.deactivated"
-	TopicAccountCreated             = "nexora.account.created"
-	TopicAccountUpdated             = "nexora.account.updated"
-	TopicAccountStatusChanged       = "nexora.account.status_changed"
-	TopicAccountBalanceChanged      = "nexora.account.balance_changed"
-	TopicPaymentCreated             = "nexora.payment.created"
-	TopicPaymentAuthorized          = "nexora.payment.authorized"
-	TopicPaymentConfirmed           = "nexora.payment.confirmed"
-	TopicPaymentSettled             = "nexora.payment.settled"
-	TopicPaymentFailed              = "nexora.payment.failed"
-	TopicPaymentReversed            = "nexora.payment.reversed"
+	TopicUserRegistered        = "nexora.user.registered"
+	TopicUserUpdated           = "nexora.user.updated"
+	TopicUserDeactivated       = "nexora.user.deactivated"
+	TopicAccountCreated        = "nexora.account.created"
+	TopicAccountUpdated        = "nexora.account.updated"
+	TopicAccountStatusChanged  = "nexora.account.status_changed"
+	TopicAccountBalanceChanged = "nexora.account.balance_changed"
+	TopicPaymentCreated        = "nexora.payment.created"
+	TopicPaymentAuthorized     = "nexora.payment.authorized"
+	TopicPaymentConfirmed      = "nexora.payment.confirmed"
+	TopicPaymentSettled        = "nexora.payment.settled"
+	TopicPaymentFailed         = "nexora.payment.failed"
+	TopicPaymentReversed       = "nexora.payment.reversed"
+	// TopicPaymentUnknown is the payment that went indeterminate (ADR-007).
+	// reconciliation-service consumes it to file a case the sweep can work;
+	// without a declared topic the consumer would never receive anything and
+	// the UNKNOWN bucket would fill with nobody looking at it.
+	TopicPaymentUnknown             = "nexora.payment.unknown"
 	TopicPaymentReservationReleased = "nexora.payment.reservation.released"
 	TopicTransferCreated            = "nexora.transfer.created"
 	TopicTransferCompleted          = "nexora.transfer.completed"
@@ -94,6 +99,7 @@ var AllTopics = []string{
 	TopicPaymentSettled,
 	TopicPaymentFailed,
 	TopicPaymentReversed,
+	TopicPaymentUnknown,
 	TopicPaymentReservationReleased,
 	TopicTransferCreated,
 	TopicTransferCompleted,

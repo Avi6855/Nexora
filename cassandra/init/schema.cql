@@ -720,6 +720,11 @@ CREATE TABLE IF NOT EXISTS reconciliation_cases (
 CREATE INDEX IF NOT EXISTS idx_recon_cases_payment
   ON reconciliation_cases (payment_id);
 
+-- The reconciliation sweep asks "which cases are still PENDING?" every
+-- interval. Without this index that question scans the whole table.
+CREATE INDEX IF NOT EXISTS idx_recon_cases_status
+  ON reconciliation_cases (status);
+
 CREATE TABLE IF NOT EXISTS reconciliation_records (
   record_id UUID PRIMARY KEY,
   transaction_id UUID,
