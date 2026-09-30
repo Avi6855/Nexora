@@ -471,6 +471,12 @@ services:
       KAFKA_BROKERS: ${KAFKA_BROKERS}
       JWT_SECRET: ${JWT_SECRET}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      # UNKNOWN payments (ADR-007) are filed by the payment.unknown consumer
+      # and concluded by the scheduled sweep, which writes the outcome back to
+      # payment-service so the customer's hold is released either way.
+      PAYMENT_SERVICE_URL: http://payment-service:8085
+      RECONCILIATION_INTERVAL: 60s
+      RECONCILIATION_BATCH_SIZE: "50"
     networks:
       - nexora-network
     healthcheck:

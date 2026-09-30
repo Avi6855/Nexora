@@ -107,6 +107,34 @@ const (
 )
 ```
 
+### Closing the Loop (added after the UNKNOWN bucket turned out to be write-only)
+
+The first implementation could file and escalate cases, but nothing joined the
+case back to the payment it was about, and nothing ran the sweep on its own.
+That combination fails in the way that matters: a payment sits in UNKNOWN with
+the customer's authorisation hold still in place, a case is resolved as
+`MATCHED`, and the money stays unusable until the hold TTL expires.
+
+The loop is now closed in four places:
+
+1. **Filed automatically** — `reconciliation-service` consumes
+   `nexora.payment.unknown` and opens one `PENDING` case per payment (idempotent
+   per payment, because delivery is at-least-once).
+2. **Scheduled** — the sweep runs on an interval
+   (`RECONCILIATION_INTERVAL`, default 60s) and once at start-up, in addition to
+   the manual `POST /v1/reconciliation/run-scheduled`.
+3. **The payment is the source of truth** — each sweep reads the payment from
+   `payment-service`. If a late provider callback already settled or failed it,
+   the case closes against that state instead of retrying work that is done.
+4. **Written back** — when the case holds a definite provider outcome
+   (`CONFIRMED`/`SETTLED`/`FAILED`), the sweep or `POST /v1/reconciliation/cases/{id}/resolve`
+   calls the internal-only `payment-service` route
+   `POST /v1/payments/{id}/resolve-unknown`. Only then is the case closed: a case
+   marked resolved while the payment is still UNKNOWN hides held money.
+
+Two `UNKNOWN` states are deliberately **not** a match. Both sides agreeing that
+nobody knows anything is not evidence about what the rail did.
+
 ### Resolution Strategy
 ```go
 type DiscrepancyResolver interface {

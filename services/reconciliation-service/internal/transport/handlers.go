@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -35,6 +36,7 @@ func (h *Handlers) RegisterRoutes(router *mux.Router) {
 	router.HandleFunc("/v1/reconciliation/cases", h.GetPendingCases).Methods("GET")
 	router.HandleFunc("/v1/reconciliation/cases/discrepancy", h.GetDiscrepancyCases).Methods("GET")
 	router.HandleFunc("/v1/reconciliation/cases/{id}", h.GetCase).Methods("GET")
+	router.HandleFunc("/v1/reconciliation/cases/{id}/resolve", h.ResolveCase).Methods("POST")
 }
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -234,6 +236,34 @@ func (h *Handlers) GetDiscrepancyCases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, http.StatusOK, cases)
+}
+
+// ResolveCase closes a case with a definite outcome and writes that outcome
+// back to the payment it is about. It is how a provider statement, a manual
+// review decision or a matched external state stops being a note on a case and
+// becomes a concluded payment with the customer's hold released.
+func (h *Handlers) ResolveCase(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["id"])
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid case ID")
+		return
+	}
+
+	var req domain.ResolveCaseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resolution := domain.ResolutionType(strings.ToUpper(strings.TrimSpace(req.Resolution)))
+	caseData, err := h.reconService.ResolveCase(r.Context(), id, req.ExternalState, resolution, req.Actor, req.Reason)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, caseData)
 }
 
 func (h *Handlers) GetCase(w http.ResponseWriter, r *http.Request) {

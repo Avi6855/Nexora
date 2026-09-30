@@ -129,6 +129,17 @@ type RunScheduledReconciliationRequest struct {
 	BatchSize int `json:"batch_size"`
 }
 
+// ResolveCaseRequest concludes a case with a definite outcome. When
+// ExternalState names a real provider outcome (CONFIRMED/SETTLED/FAILED) the
+// resolution is written back to the payment it is about, so the payment stops
+// being UNKNOWN instead of the case closing over a payment nobody resolved.
+type ResolveCaseRequest struct {
+	ExternalState string `json:"external_state"`
+	Resolution    string `json:"resolution,omitempty"`
+	Actor         string `json:"actor,omitempty"`
+	Reason        string `json:"reason,omitempty"`
+}
+
 type ReconcileResult struct {
 	CaseID        uuid.UUID      `json:"case_id"`
 	PaymentID     uuid.UUID      `json:"payment_id"`

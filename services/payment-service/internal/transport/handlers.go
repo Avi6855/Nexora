@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -36,6 +37,7 @@ func (h *Handlers) RegisterRoutes(router *mux.Router) {
 	router.HandleFunc("/v1/payments/{id}/reverse", h.ReversePayment).Methods("POST")
 	router.HandleFunc("/v1/payments/{id}/fail", h.FailPayment).Methods("POST")
 	router.HandleFunc("/v1/payments/{id}/timeout", h.HandleTimeout).Methods("POST")
+	router.HandleFunc("/v1/payments/{id}/resolve-unknown", h.ResolveUnknownPayment).Methods("POST")
 	router.HandleFunc("/v1/accounts/{id}/payments", h.GetAccountPayments).Methods("GET")
 	router.HandleFunc("/v1/webhooks/provider", h.HandleProviderWebhook).Methods("POST")
 }
@@ -313,6 +315,51 @@ func (h *Handlers) ProcessPayment(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	respondJSON(w, http.StatusOK, payment)
+}
+
+// ResolveUnknownPayment is the reconciliation write-back route: the only way a
+// payment that went UNKNOWN gets a real outcome decided from outside the saga.
+// It is internal-only: the caller must carry the service-to-service secret,
+// which only in-network services know. A user who could declare their own
+// payment confirmed would be booking money that never moved.
+func (h *Handlers) ResolveUnknownPayment(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-Internal-Token") == "" {
+		respondError(w, http.StatusForbidden, "internal callers only")
+		return
+	}
+
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["id"])
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid payment ID")
+		return
+	}
+
+	var req domain.ResolveUnknownRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	outcome := domain.ResolutionOutcome(strings.ToUpper(strings.TrimSpace(req.Outcome)))
+	if !outcome.Valid() {
+		respondError(w, http.StatusBadRequest, "outcome must be CONFIRMED or FAILED")
+		return
+	}
+
+	payment, err := h.paymentService.ResolveUnknownPayment(r.Context(), id, outcome, req.Reason)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	h.logger.Info().
+		Str("payment_id", id.String()).
+		Str("outcome", string(outcome)).
+		Str("resolved_by", req.ResolvedBy).
+		Msg("UNKNOWN payment resolved by reconciliation")
 
 	respondJSON(w, http.StatusOK, payment)
 }

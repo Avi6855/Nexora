@@ -17,6 +17,9 @@ type ReconciliationRepository interface {
 	GetCasesByStatus(ctx context.Context, status domain.ReconciliationStatus, limit int) ([]*domain.ReconciliationCase, error)
 	UpdateCaseStatus(ctx context.Context, id uuid.UUID, status domain.ReconciliationStatus, reason string) error
 	UpdateCaseResolution(ctx context.Context, id uuid.UUID, resolution domain.ResolutionType, reason string) error
+	// UpdateCaseExternalState records what the provider side turned out to be,
+	// which is the evidence a case is concluded from.
+	UpdateCaseExternalState(ctx context.Context, id uuid.UUID, externalState string, externalAmount int64) error
 	IncrementAttemptCount(ctx context.Context, id uuid.UUID) error
 	CreateRecord(ctx context.Context, record *domain.ReconciliationRecord) error
 	GetRecordByID(ctx context.Context, id uuid.UUID) (*domain.ReconciliationRecord, error)
@@ -132,6 +135,11 @@ func (r *cassandraReconciliationRepository) UpdateCaseResolution(ctx context.Con
 	now := time.Now().UTC()
 	query := `UPDATE reconciliation_cases SET resolution = ?, discrepancy_reason = ?, status = ?, updated_at = ?, resolved_at = ? WHERE case_id = ?`
 	return r.session.Query(query, string(resolution), reason, string(domain.ReconciliationStatusResolved), now, now, id).WithContext(ctx).Exec()
+}
+
+func (r *cassandraReconciliationRepository) UpdateCaseExternalState(ctx context.Context, id uuid.UUID, externalState string, externalAmount int64) error {
+	query := `UPDATE reconciliation_cases SET external_state = ?, external_amount = ?, updated_at = ? WHERE case_id = ?`
+	return r.session.Query(query, externalState, externalAmount, time.Now().UTC(), id).WithContext(ctx).Exec()
 }
 
 func (r *cassandraReconciliationRepository) IncrementAttemptCount(ctx context.Context, id uuid.UUID) error {

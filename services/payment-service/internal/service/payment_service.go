@@ -156,6 +156,16 @@ func (s *PaymentService) HandleTimeout(ctx context.Context, id uuid.UUID) (*doma
 	return s.saga.ExecuteHandleTimeout(ctx, id.String(), correlationID)
 }
 
+// ResolveUnknownPayment concludes a payment that went UNKNOWN on an
+// indeterminate provider response. It is the write-back reconciliation-service
+// uses once a case has established what actually happened; without it the case
+// would be closed on paper while the payment stayed UNKNOWN and the customer's
+// money stayed held.
+func (s *PaymentService) ResolveUnknownPayment(ctx context.Context, id uuid.UUID, outcome domain.ResolutionOutcome, reason string) (*domain.Payment, error) {
+	correlationID := extractOrCreateCorrelationID(ctx)
+	return s.saga.ExecuteResolveUnknown(ctx, id.String(), outcome, reason, correlationID)
+}
+
 func (s *PaymentService) FailPayment(ctx context.Context, id uuid.UUID, reason string) error {
 	correlationID := extractOrCreateCorrelationID(ctx)
 	_, err := s.saga.failPaymentByID(ctx, id.String(), reason, correlationID)

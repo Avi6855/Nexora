@@ -159,6 +159,34 @@ type ProviderCallbackRequest struct {
 	ResponseCode   string `json:"response_code,omitempty"`
 }
 
+// ResolutionOutcome is the definite outcome reconciliation reached for a
+// payment whose provider response was indeterminate. It is the only shape an
+// UNKNOWN payment may be concluded in from outside the saga: an UNKNOWN payment
+// is not a declined payment, so nothing may mark it FAILED without evidence.
+type ResolutionOutcome string
+
+const (
+	// ResolutionOutcomeConfirmed means the money did move after all. The
+	// payment follows the normal settlement path from here.
+	ResolutionOutcomeConfirmed ResolutionOutcome = "CONFIRMED"
+	// ResolutionOutcomeFailed means the money never moved. The hold is given
+	// back to the customer and the payment is closed as failed.
+	ResolutionOutcomeFailed ResolutionOutcome = "FAILED"
+)
+
+func (o ResolutionOutcome) Valid() bool {
+	return o == ResolutionOutcomeConfirmed || o == ResolutionOutcomeFailed
+}
+
+// ResolveUnknownRequest is the internal reconciliation write-back body: it is
+// how a case resolved in reconciliation-service reaches the payment it is
+// about, so the payment stops being UNKNOWN once its real outcome is known.
+type ResolveUnknownRequest struct {
+	Outcome    string `json:"outcome"`
+	Reason     string `json:"reason,omitempty"`
+	ResolvedBy string `json:"resolved_by,omitempty"`
+}
+
 type ErrorResponse struct {
 	Error   string `json:"error"`
 	Message string `json:"message"`

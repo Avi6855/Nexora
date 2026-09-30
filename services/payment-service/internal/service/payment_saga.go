@@ -420,6 +420,7 @@ func (s *PaymentSaga) handleProviderResult(ctx context.Context, payment *domain.
 }
 
 func (s *PaymentSaga) confirmAndSettle(ctx context.Context, payment *domain.Payment, correlationID string) {
+	previous := string(payment.State)
 	if err := payment.TransitionTo(domain.PaymentStateConfirmed); err != nil {
 		s.logger.Error().Err(err).Str("payment_id", payment.PaymentID.String()).Msg("failed to transition to CONFIRMED")
 		return
@@ -434,7 +435,7 @@ func (s *PaymentSaga) confirmAndSettle(ctx context.Context, payment *domain.Paym
 		Amount:           payment.Amount,
 		Currency:         payment.Currency,
 		State:            string(payment.State),
-		PreviousState:    string(domain.PaymentStateProcessing),
+		PreviousState:    previous,
 		CounterpartyID:   payment.CounterpartyID,
 		CounterpartyName: payment.CounterpartyName,
 		Reference:        payment.Reference,
@@ -495,6 +496,7 @@ func (s *PaymentSaga) handleProviderError(ctx context.Context, payment *domain.P
 }
 
 func (s *PaymentSaga) failPayment(ctx context.Context, payment *domain.Payment, reason string, correlationID string) {
+	previous := string(payment.State)
 	if err := payment.TransitionTo(domain.PaymentStateFailed); err != nil {
 		s.logger.Error().Err(err).Str("payment_id", payment.PaymentID.String()).Msg("failed to transition to FAILED")
 		return
@@ -512,6 +514,7 @@ func (s *PaymentSaga) failPayment(ctx context.Context, payment *domain.Payment, 
 		Amount:           payment.Amount,
 		Currency:         payment.Currency,
 		State:            string(payment.State),
+		PreviousState:    previous,
 		FailureReason:    reason,
 		CounterpartyID:   payment.CounterpartyID,
 		CounterpartyName: payment.CounterpartyName,
@@ -532,6 +535,17 @@ func (s *PaymentSaga) failPayment(ctx context.Context, payment *domain.Payment, 
 }
 
 func (s *PaymentSaga) markUnknown(ctx context.Context, payment *domain.Payment, correlationID string) {
+	if payment.State == domain.PaymentStateUnknown {
+		// A second indeterminate answer changes nothing: the payment is
+		// already in the bucket reconciliation owns, and re-publishing the
+		// transition would report a state change that did not happen.
+		s.logger.Warn().
+			Str("payment_id", payment.PaymentID.String()).
+			Msg("payment outcome still unknown; reconciliation owns it")
+		return
+	}
+
+	previous := string(payment.State)
 	if err := payment.TransitionTo(domain.PaymentStateUnknown); err != nil {
 		s.logger.Error().Err(err).Str("payment_id", payment.PaymentID.String()).Msg("failed to transition to UNKNOWN")
 		return
@@ -546,7 +560,7 @@ func (s *PaymentSaga) markUnknown(ctx context.Context, payment *domain.Payment, 
 		Amount:           payment.Amount,
 		Currency:         payment.Currency,
 		State:            string(payment.State),
-		PreviousState:    string(domain.PaymentStateProcessing),
+		PreviousState:    previous,
 		CounterpartyID:   payment.CounterpartyID,
 		CounterpartyName: payment.CounterpartyName,
 		Reference:        payment.Reference,
@@ -632,8 +646,12 @@ func (s *PaymentSaga) ExecuteHandleProviderCallback(ctx context.Context, callbac
 		return nil, fmt.Errorf("getting payment: %w", err)
 	}
 
-	if payment.State != domain.PaymentStateProcessing {
-		return nil, fmt.Errorf("cannot handle callback for payment in state %s, must be PROCESSING", payment.State)
+	// A late callback is exactly the case that must not be dropped: a provider
+	// that timed out and then answered SUCCESS is telling us the money moved,
+	// and the payment is sitting in UNKNOWN waiting for that answer. Refusing
+	// it here was how an UNKNOWN payment could never self-heal.
+	if payment.State != domain.PaymentStateProcessing && payment.State != domain.PaymentStateUnknown {
+		return nil, fmt.Errorf("cannot handle callback for payment in state %s, must be PROCESSING or UNKNOWN", payment.State)
 	}
 
 	payment.ProviderResponse = &domain.ProviderResponse{
@@ -680,6 +698,63 @@ func (s *PaymentSaga) ExecuteHandleTimeout(ctx context.Context, paymentID string
 	}
 
 	s.markUnknown(ctx, payment, correlationID)
+
+	return payment, nil
+}
+
+// ExecuteResolveUnknown concludes a payment whose provider outcome was
+// indeterminate. Reconciliation calls this once it has established what really
+// happened, so an UNKNOWN payment ends in a real state instead of sitting
+// unknown forever with the customer's money still held.
+//
+// It is deliberately idempotent: a payment that is no longer UNKNOWN was
+// already concluded — by a late provider callback, by an earlier
+// reconciliation run, or by an operator — and is returned untouched. That is
+// not just politeness: every concluding path gives the hold back, and releasing
+// the same hold twice would credit the customer for money that never moved.
+func (s *PaymentSaga) ExecuteResolveUnknown(ctx context.Context, paymentID string, outcome domain.ResolutionOutcome, reason, correlationID string) (*domain.Payment, error) {
+	if !outcome.Valid() {
+		return nil, fmt.Errorf("unsupported resolution outcome %q, want CONFIRMED or FAILED", outcome)
+	}
+
+	id, err := parseUUID(paymentID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid payment ID: %w", err)
+	}
+
+	payment, err := s.paymentRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("getting payment: %w", err)
+	}
+
+	if payment.State != domain.PaymentStateUnknown {
+		s.logger.Info().
+			Str("payment_id", payment.PaymentID.String()).
+			Str("state", string(payment.State)).
+			Str("outcome", string(outcome)).
+			Msg("payment is not UNKNOWN; reconciliation resolution is a no-op")
+		return payment, nil
+	}
+
+	if reason == "" {
+		reason = "resolved by reconciliation"
+	}
+
+	// Both paths assume the hold is still in place, which is exactly the state
+	// the UNKNOWN path leaves behind: confirming settles and releases it,
+	// failing gives it straight back.
+	switch outcome {
+	case domain.ResolutionOutcomeConfirmed:
+		s.confirmAndSettle(ctx, payment, correlationID)
+	case domain.ResolutionOutcomeFailed:
+		s.failPayment(ctx, payment, reason, correlationID)
+	}
+
+	s.logger.Info().
+		Str("payment_id", payment.PaymentID.String()).
+		Str("outcome", string(outcome)).
+		Str("state", string(payment.State)).
+		Msg("payment saga: UNKNOWN payment resolved by reconciliation")
 
 	return payment, nil
 }
