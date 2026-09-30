@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -24,6 +25,34 @@ import (
 	"github.com/nexora/nexora/shared/config"
 	"github.com/nexora/nexora/shared/health"
 )
+
+// durationFromEnv reads a duration setting, falling back to the default when it
+// is missing or unparseable rather than refusing to start.
+func durationFromEnv(key string, fallback time.Duration, logger zerolog.Logger) time.Duration {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil {
+		logger.Warn().Err(err).Str("value", raw).Str("key", key).Msg("invalid duration, using the default")
+		return fallback
+	}
+	return parsed
+}
+
+func intFromEnv(key string, fallback int, logger zerolog.Logger) int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 0 {
+		logger.Warn().Str("value", raw).Str("key", key).Msg("invalid number, using the default")
+		return fallback
+	}
+	return parsed
+}
 
 func main() {
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).With().Timestamp().Logger()
@@ -61,6 +90,21 @@ func main() {
 	}
 
 	transferService := service.NewTransferService(transferRepo, clients.NewLedgerClient(), clients.NewAccountClient(), producer, logger)
+
+	// ── Indeterminate transfers (ADR-007) ───────────────────────────────
+	// A booking that timed out is not a booking that was refused. Transfers in
+	// that state are retried against the ledger on an interval — the ledger
+	// booking is idempotent on the transfer's own key, so a retry settles the
+	// booking that already happened or books the one that never did, and after
+	// the escalation window a human is asked to look instead.
+	transferService.SetEscalationWindow(durationFromEnv("TRANSFER_SWEEP_ESCALATE_AFTER", 15*time.Minute, logger))
+	sweepCtx, cancelSweep := context.WithCancel(context.Background())
+	defer cancelSweep()
+	go transferService.RunUnknownScheduler(
+		sweepCtx,
+		durationFromEnv("TRANSFER_SWEEP_INTERVAL", time.Minute, logger),
+		intFromEnv("TRANSFER_SWEEP_BATCH_SIZE", 50, logger),
+	)
 
 	handlers := transport.NewHandlers(transferService, logger)
 	router := mux.NewRouter()

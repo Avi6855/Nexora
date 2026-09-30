@@ -14,6 +14,9 @@ type TransferRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Transfer, error)
 	GetByIdempotencyKey(ctx context.Context, key string) (*domain.Transfer, error)
 	GetByFromAccount(ctx context.Context, accountID uuid.UUID) ([]*domain.Transfer, error)
+	// GetByStatus is how the sweep finds the transfers still waiting for an
+	// answer (backed by idx_transfers_status).
+	GetByStatus(ctx context.Context, status domain.TransferStatus, limit int) ([]*domain.Transfer, error)
 	Update(ctx context.Context, transfer *domain.Transfer) error
 }
 
@@ -114,6 +117,19 @@ func (r *cassandraTransferRepository) GetByFromAccount(ctx context.Context, acco
 		FROM transfers WHERE from_account_id = ?`
 
 	iter := r.session.Query(query, gocql.UUID(accountID)).WithContext(ctx).Iter()
+	defer iter.Close()
+
+	return scanTransfer(iter)
+}
+
+func (r *cassandraTransferRepository) GetByStatus(ctx context.Context, status domain.TransferStatus, limit int) ([]*domain.Transfer, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	query := `SELECT transfer_id, idempotency_key, from_account_id, to_account_id, amount, currency, status, description, created_at, completed_at
+		FROM transfers WHERE status = ? LIMIT ? ALLOW FILTERING`
+
+	iter := r.session.Query(query, string(status), limit).WithContext(ctx).Iter()
 	defer iter.Close()
 
 	return scanTransfer(iter)

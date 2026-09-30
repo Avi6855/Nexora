@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,6 +35,21 @@ type LedgerTransfer struct {
 
 // ErrInsufficientFunds marks a ledger 402 (availability check failed).
 var ErrInsufficientFunds = fmt.Errorf("insufficient funds")
+
+// ErrIndeterminate marks a booking whose outcome nobody knows: the ledger was
+// unreachable, the call timed out, or it answered 5xx. The money may or may not
+// have moved, so the caller must not record a definite answer.
+var ErrIndeterminate = fmt.Errorf("indeterminate ledger outcome")
+
+// IsIndeterminate reports whether a booking outcome is unknown rather than
+// refused. A refused booking is money that did not move; an indeterminate one is
+// money that might have.
+func IsIndeterminate(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, ErrIndeterminate) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
+}
 
 type LedgerClient struct {
 	baseURL string
@@ -67,7 +84,9 @@ func (c *LedgerClient) BookTransfer(ctx context.Context, source, dest uuid.UUID,
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("ledger service unreachable: %w", err)
+		// The request may have been applied before the connection broke: the
+		// ledger of record is the only place that knows.
+		return nil, fmt.Errorf("%w: ledger service unreachable: %v", ErrIndeterminate, err)
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
@@ -75,8 +94,12 @@ func (c *LedgerClient) BookTransfer(ctx context.Context, source, dest uuid.UUID,
 	if resp.StatusCode == http.StatusPaymentRequired {
 		return nil, ErrInsufficientFunds
 	}
+	if resp.StatusCode >= http.StatusInternalServerError {
+		// A 5xx may be a response written after the booking committed.
+		return nil, fmt.Errorf("%w: ledger transfer returned %d: %s", ErrIndeterminate, resp.StatusCode, strings.TrimSpace(string(data)))
+	}
 	if resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("ledger transfer returned %d: %s", resp.StatusCode, string(data))
+		return nil, fmt.Errorf("ledger transfer refused with %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
 	}
 	var result LedgerTransfer
 	if err := json.Unmarshal(data, &result); err != nil {

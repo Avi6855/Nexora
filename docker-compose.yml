@@ -239,6 +239,11 @@ services:
       KAFKA_BROKERS: ${KAFKA_BROKERS}
       JWT_SECRET: ${JWT_SECRET}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      # A booking whose outcome was indeterminate (ADR-007) is retried against
+      # the ledger with its own idempotency key, then escalated to a human.
+      TRANSFER_SWEEP_INTERVAL: 60s
+      TRANSFER_SWEEP_ESCALATE_AFTER: 15m
+      TRANSFER_SWEEP_BATCH_SIZE: "50"
     networks:
       - nexora-network
     healthcheck:

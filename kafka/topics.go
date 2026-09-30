@@ -25,11 +25,16 @@ const (
 	TopicTransferCreated            = "nexora.transfer.created"
 	TopicTransferCompleted          = "nexora.transfer.completed"
 	TopicTransferFailed             = "nexora.transfer.failed"
-	TopicCardCreated                = "nexora.card.created"
-	TopicCardFrozen                 = "nexora.card.frozen"
-	TopicCardUnfrozen               = "nexora.card.unfrozen"
-	TopicCardBlocked                = "nexora.card.blocked"
-	TopicCardUpdated                = "nexora.card.updated"
+	// TopicTransferUnknown is the internal move whose booking outcome nobody
+	// knows (ADR-007): a transfer whose ledger call timed out. The transfer
+	// sweep retries it against the ledger with its own idempotency key, so the
+	// retry settles the original booking instead of making a second one.
+	TopicTransferUnknown = "nexora.transfer.unknown"
+	TopicCardCreated     = "nexora.card.created"
+	TopicCardFrozen      = "nexora.card.frozen"
+	TopicCardUnfrozen    = "nexora.card.unfrozen"
+	TopicCardBlocked     = "nexora.card.blocked"
+	TopicCardUpdated     = "nexora.card.updated"
 	// Real-time authorization lifecycle: published by card-service and consumed
 	// by the notification-service push/feed pipeline (SSE). These were being
 	// published without being declared (and therefore never created) here.
@@ -104,6 +109,7 @@ var AllTopics = []string{
 	TopicTransferCreated,
 	TopicTransferCompleted,
 	TopicTransferFailed,
+	TopicTransferUnknown,
 	TopicCardCreated,
 	TopicCardFrozen,
 	TopicCardUnfrozen,

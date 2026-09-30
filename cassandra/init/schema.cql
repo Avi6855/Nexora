@@ -250,6 +250,11 @@ CREATE TABLE IF NOT EXISTS transfers (
 CREATE INDEX IF NOT EXISTS idx_transfers_from_account
   ON transfers (from_account_id);
 
+-- The indeterminate-transfer sweep asks "which transfers are still UNKNOWN?"
+-- on an interval; without this index that question scans the whole table.
+CREATE INDEX IF NOT EXISTS idx_transfers_status
+  ON transfers (status);
+
 -- ── Cards ────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS cards (
   card_id UUID PRIMARY KEY,
