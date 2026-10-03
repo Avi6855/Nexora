@@ -11,6 +11,7 @@ package regimpact
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -145,17 +146,27 @@ func (a *Analyzer) Registered() []string {
 
 // Analyze computes the full impact of a rule.
 func (a *Analyzer) Analyze(rule Rule) *Analysis {
+	return a.AnalyzeAt(rule, time.Now().UTC())
+}
+
+// AnalyzeAt is Analyze with the clock supplied, so callers and tests that need
+// a stable "now" are not at the mercy of how long they took to get here.
+func (a *Analyzer) AnalyzeAt(rule Rule, now time.Time) *Analysis {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	now := time.Now().UTC()
+	now = now.UTC()
 	analysis := &Analysis{
 		RuleID:        rule.RuleID,
 		Title:         rule.Title,
 		AnalyzedAt:    now,
 		EffectiveFrom: rule.EffectiveFrom,
 	}
-	if d := int(rule.EffectiveFrom.Sub(now).Hours() / 24); d > 0 {
+	// Whole days until the rule takes effect, rounded up: a deadline that is a
+	// fraction of a second short of N days away is still N calendar days of
+	// preparation, not N-1. Truncating here reported 9 days for a rule exactly
+	// 10 days out, and fed that undercount into the CRITICAL threshold below.
+	if d := int(math.Ceil(rule.EffectiveFrom.Sub(now).Hours() / 24)); d > 0 {
 		analysis.DaysUntilEffective = d
 	}
 
