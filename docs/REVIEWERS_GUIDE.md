@@ -21,6 +21,11 @@ correctness machinery** underneath them:
 | A payment state change and its event commit atomically (no dual write) | `services/payment-service/internal/service/payment_saga.go`, `internal/repository/payment_repository.go`, `shared/outbox` | `TestCreatePersistsStateAndEventInOneAtomicWrite` |
 | One user action creates exactly one payment, even when two requests race with the same idempotency key | `ClaimIdempotencyKey` (Cassandra LWT), `ExecuteCreatePayment` | `TestConcurrentCreateWithSameIdempotencyKeyCreatesOnePayment` |
 | An indeterminate provider outcome is never reported as FAILED or SETTLED | `markUnknown`, `handleProviderError` | `TestUnknownOutcomeIsNeverMarkedFailed` |
+| An UNKNOWN payment stays UNKNOWN **and held** until something resolves it | `markUnknown` (hold deliberately not released), `ExecuteResolveUnknown` | `TestUnknownPaymentStaysUnknownAndHeldUntilItIsResolved` |
+| The UNKNOWN event becomes a case, and the case concludes the payment over HTTP exactly once | `OpenCaseForUnknownPayment`, `reconcileCase`, `clients/payment_client.go` | `TestUnknownEventBecomesAClosedCaseAgainstThePayment`, `TestReconciliationResolvesUnknownOverHTTPExactlyOnce` |
+| A late provider callback concludes an UNKNOWN payment instead of being rejected | `ExecuteHandleProviderCallback` | `TestLateProviderCallbackConcludesTheUnknownPayment` |
+| A timed-out ledger booking is UNKNOWN, not FAILED, and retries on its own ledger key | `TransferStatusUnknown`, `RunUnknownSweep`, `clients.IsIndeterminate` | `TestIndeterminateBookingIsRecordedAsUnknown`, `TestRetryResumesAnIndeterminateTransferWithTheSameLedgerKey` |
+| A sweep that cannot reach the payment service keeps the case open rather than guessing | `outcomeForExternalState`, `recordAttempt` | `TestUnreachablePaymentServiceKeepsTheCaseOpen` |
 | Card authorization fails closed: no risk answer or no funds ⇒ decline | `services/card-service/internal/service/authorization_service.go` | `TestRiskEngineUnavailableFailsClosed`, `TestLedgerUnavailableDeclinesRatherThanApprovingUnfunded` |
 | The customer's own spending controls (online/ATM/gambling) decline before anything is held | `channelBlocked` | `TestCustomerSpendingControlsDeclineBeforeTheRiskEngine` |
 | A hold is settled exactly once; a duplicate capture or provider callback moves no money | `CaptureAuthorization`, `ExecuteHandleProviderCallback` | `TestCaptureSettlesTheHoldExactlyOnce`, `TestDuplicateProviderCallbackCannotDoubleBook` |
@@ -47,7 +52,7 @@ cd shared && go test ./...
 for mod in services/*/; do (cd "$mod" && go test ./...); done
 ```
 
-Current state: **856 Go test functions across 147 files pass**, plus 48 Kotlin
+Current state: **894 Go test functions across 153 files pass**, plus 48 Kotlin
 test functions in the Android app. `gofmt -l .` is clean and CI runs vet, build
 and tests for **every module** (each service is its own Go module — a root-level
 `go test ./...` silently skips them, which the pipeline now handles explicitly).
@@ -59,12 +64,12 @@ and tests for **every module** (each service is its own Go module — a root-lev
 | | Count |
 |---|---|
 | Go microservices | 20 |
-| REST endpoints (`/v1/...`) | 545 |
-| Go source files / lines | 525 / ~105,000 |
-| Shared platform packages (`shared/`) | 72 (13 core infra + 59 domain capability packages) |
+| REST endpoint bindings (`/v1/...`, method + path) | 553 (531 distinct paths) |
+| Go source files / lines | 549 / ~115,600 |
+| Shared platform packages (`shared/`) | 72 |
 | Cassandra tables | 54 |
-| Kafka topics (incl. 8 DLQ) | 70 |
-| Go test files / test functions | 147 / 856 |
+| Kafka topics (incl. 8 DLQ) | 73 |
+| Go test files / test functions | 153 / 894 |
 | Android feature modules / screens | 13 / 25 (48 test functions) |
 | Architecture Decision Records | 30 |
 | Kubernetes manifests | 12 |
