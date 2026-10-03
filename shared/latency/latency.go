@@ -61,6 +61,27 @@ func New(b Budget) *Manager {
 	return &Manager{total: b.Total, deadline: time.Now().Add(b.Total), spentBy: map[string]time.Duration{}}
 }
 
+// wallCeiling is the wall-clock budget still available, rounded up to the next
+// whole millisecond.
+//
+// Deadlines travel as integer milliseconds (Inject writes UnixMilli, FromRequest
+// parses it back), so a sub-millisecond remainder is not representable on the
+// wire anyway. Truncating it would silently shave the budget a caller was
+// promised: a fresh 100ms budget measured 40us late would hand out 99.96ms and
+// fail a caller that asked for its full 100ms. Rounding up keeps an unexpired
+// deadline worth its full nominal budget; a deadline that has actually passed
+// still yields <= 0 and is refused.
+func wallCeiling(deadline time.Time) time.Duration {
+	wall := time.Until(deadline)
+	if wall <= 0 {
+		return wall
+	}
+	if rem := wall % time.Millisecond; rem != 0 {
+		return wall + (time.Millisecond - rem)
+	}
+	return wall
+}
+
 // FromRequest builds a manager from propagated headers (a downstream service
 // receiving an in-flight request continues the SAME budget, it does not start
 // a fresh one). Falls back to the default budget when headers are absent.
@@ -117,7 +138,7 @@ func (m *Manager) Allocate(component string, want time.Duration) (time.Duration,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	allocatable := m.total - m.spent
-	if wall := time.Until(m.deadline); wall < allocatable {
+	if wall := wallCeiling(m.deadline); wall < allocatable {
 		allocatable = wall
 	}
 	if allocatable <= 0 {
@@ -169,7 +190,9 @@ func (m *Manager) Remaining() time.Duration {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r := m.total - m.spent
-	if wall := time.Until(m.deadline); wall < r {
+	// Same ceiling as Allocate, so what Remaining reports and what Allocate
+	// grants cannot disagree by a fraction of a millisecond.
+	if wall := wallCeiling(m.deadline); wall < r {
 		r = wall
 	}
 	if r < 0 {
@@ -204,7 +227,7 @@ func (m *Manager) Split(names ...string) (map[string]time.Duration, error) {
 		return nil, errors.New("split requires at least one component")
 	}
 	m.mu.Lock()
-	remaining := time.Until(m.deadline)
+	remaining := wallCeiling(m.deadline)
 	m.mu.Unlock()
 	if remaining <= 0 {
 		return nil, ErrExhausted
