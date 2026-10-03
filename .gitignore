@@ -15,13 +15,15 @@ android/.gradle/
 android/build/
 android/app/build/
 android/local.properties
-android/gradle/wrapper/gradle-wrapper.jar
 *.apk
 *.ap_
 
 # Java
 *.class
+# Compiled jars are build output, but the Gradle wrapper jar is source: without
+# it `./gradlew` cannot bootstrap itself, so CI fails before Gradle starts.
 *.jar
+!android/gradle/wrapper/gradle-wrapper.jar
 
 # JDK
 .jdk/
